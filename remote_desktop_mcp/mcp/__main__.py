@@ -1,4 +1,6 @@
 from typing import Annotated
+from typing import Any
+from typing import cast
 
 import structlog
 import typer
@@ -9,18 +11,10 @@ from ..protocol.vnc import VNCSession
 from .server import mcp
 from .server import set_session
 
-# Configure structlog
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt='iso'),
-        structlog.processors.JSONRenderer(),
-    ],
-)
 logger = structlog.get_logger()
 
 app = typer.Typer(
-    help='Remote Desktop MCP Server - Start the MCP server for various protocols.',
+    help='Start the MCP server for various protocols.',
     no_args_is_help=True,
 )
 
@@ -28,8 +22,10 @@ app = typer.Typer(
 @app.command(name='local')
 def mcp_local(
     display: Annotated[
-        str | None, typer.Option(
-        help='Display number (e.g. :0).',
+        str | None,
+        typer.Option(
+            help='Display number (e.g. :0).',
+            envvar='REMOTE_DESKTOP_DISPLAY',
         ),
     ] = None,
 ):
@@ -45,17 +41,36 @@ def mcp_local(
 
 @app.command(name='rdp')
 def mcp_rdp(
-    host: Annotated[str, typer.Argument(help='RDP remote host address')],
-    user: Annotated[str, typer.Argument(help='RDP username')],
-    password: Annotated[str, typer.Argument(help='RDP password')],
+    host: Annotated[
+        str,
+        typer.Option(
+            help='RDP remote host address',
+            envvar='REMOTE_DESKTOP_RDP_HOST',
+        ),
+    ] = cast(Any, ...),
+    user: Annotated[
+        str,
+        typer.Option(help='RDP username', envvar='REMOTE_DESKTOP_RDP_USER'),
+    ] = cast(Any, ...),
+    password: Annotated[
+        str,
+        typer.Option(
+            help='RDP password',
+            envvar='REMOTE_DESKTOP_RDP_PASSWORD',
+        ),
+    ] = cast(Any, ...),
     display: Annotated[
-        str, typer.Option(
-        help='Local Xvfb display number.',
+        str,
+        typer.Option(
+            help='Local Xvfb display number.',
+            envvar='REMOTE_DESKTOP_DISPLAY',
         ),
     ] = ':99',
     resolution: Annotated[
-        str, typer.Option(
-        help='Screen resolution.',
+        str,
+        typer.Option(
+            help='Screen resolution.',
+            envvar='REMOTE_DESKTOP_RESOLUTION',
         ),
     ] = '1280x720',
 ):
@@ -77,8 +92,20 @@ def mcp_rdp(
 
 @app.command(name='vnc')
 def mcp_vnc(
-    host: Annotated[str, typer.Argument(help='VNC remote host address (host:port)')],
-    password: Annotated[str | None, typer.Option(help='VNC password')] = None,
+    host: Annotated[
+        str,
+        typer.Option(
+            help='VNC remote host address (host:port)',
+            envvar='REMOTE_DESKTOP_VNC_HOST',
+        ),
+    ] = cast(Any, ...),
+    password: Annotated[
+        str | None,
+        typer.Option(
+            help='VNC password',
+            envvar='REMOTE_DESKTOP_VNC_PASSWORD',
+        ),
+    ] = None,
 ):
     """Start MCP server for a VNC connection."""
     logger.info('starting_vnc_mcp_server', host=host)

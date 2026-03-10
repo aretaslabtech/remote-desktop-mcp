@@ -1,4 +1,6 @@
 from typing import Annotated
+from typing import Any
+from typing import cast
 
 import structlog
 import typer
@@ -8,14 +10,6 @@ from ..protocol.local import LocalSession
 from ..protocol.rdp import RDPSession
 from ..protocol.vnc import VNCSession
 
-# Configure structlog
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt='iso'),
-        structlog.processors.JSONRenderer(),
-    ],
-)
 logger = structlog.get_logger()
 
 app = typer.Typer(
@@ -35,7 +29,10 @@ def debug_local_screenshot(
         help='Output path',
         ),
     ] = 'screenshot.png',
-    display: Annotated[str | None, typer.Option(help='Display number')] = None,
+    display: Annotated[
+        str | None,
+        typer.Option(help='Display number', envvar='REMOTE_DESKTOP_DISPLAY'),
+    ] = None,
 ):
     session = LocalSession(display_num=display)
     session.start()
@@ -48,7 +45,10 @@ def debug_local_screenshot(
 def debug_local_click(
     x: int, y: int,
     button: MouseButton = MouseButton.LEFT,
-    display: Annotated[str | None, typer.Option(help='Display number')] = None,
+    display: Annotated[
+        str | None,
+        typer.Option(help='Display number', envvar='REMOTE_DESKTOP_DISPLAY'),
+    ] = None,
 ):
     session = LocalSession(display_num=display)
     session.start()
@@ -63,8 +63,17 @@ app.add_typer(debug_vnc_app, name='vnc')
 
 @debug_vnc_app.command(name='screenshot')
 def debug_vnc_screenshot(
-    host: str,
-    password: str | None = None,
+    host: Annotated[
+        str,
+        typer.Option(help='VNC host', envvar='REMOTE_DESKTOP_VNC_HOST'),
+    ] = cast(Any, ...),
+    password: Annotated[
+        str | None,
+        typer.Option(
+            help='VNC password',
+            envvar='REMOTE_DESKTOP_VNC_PASSWORD',
+        ),
+    ] = None,
     output: str = 'vnc_screenshot.png',
 ):
     session = VNCSession(host=host, password=password)
@@ -81,10 +90,30 @@ app.add_typer(debug_rdp_app, name='rdp')
 
 @debug_rdp_app.command(name='screenshot')
 def debug_rdp_screenshot(
-    host: str, user: str, password: str,
+    host: Annotated[
+        str,
+        typer.Option(help='RDP host', envvar='REMOTE_DESKTOP_RDP_HOST'),
+    ] = cast(Any, ...),
+    user: Annotated[
+        str,
+        typer.Option(help='RDP user', envvar='REMOTE_DESKTOP_RDP_USER'),
+    ] = cast(Any, ...),
+    password: Annotated[
+        str,
+        typer.Option(
+            help='RDP password',
+            envvar='REMOTE_DESKTOP_RDP_PASSWORD',
+        ),
+    ] = cast(Any, ...),
     output: str = 'rdp_screenshot.png',
-    display: str = ':99',
-    resolution: str = '1280x720',
+    display: Annotated[
+        str,
+        typer.Option(help='Display number', envvar='REMOTE_DESKTOP_DISPLAY'),
+    ] = ':99',
+    resolution: Annotated[
+        str,
+        typer.Option(help='Resolution', envvar='REMOTE_DESKTOP_RESOLUTION'),
+    ] = '1280x720',
 ):
     session = RDPSession(
         host, user, password,

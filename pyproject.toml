@@ -15,8 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-remote-desktop-mcp = "remote_desktop_mcp.mcp.__main__:app"
-remote-desktop-debug = "remote_desktop_mcp.cli.__main__:app"
+remote-desktop-mcp = "remote_desktop_mcp.main:app"
 
 [dependency-groups]
 dev = [
