@@ -14,6 +14,10 @@ dependencies = [
     "vncdotool>=1.2.0",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project.scripts]
 remote-desktop-mcp = "remote_desktop_mcp.__main__:app"
 
