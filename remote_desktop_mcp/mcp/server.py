@@ -210,7 +210,7 @@ def press_hotkey(keys: str) -> str:
         return 'Error: No keys provided.'
 
     debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(ActionType.KEY, {'hotkey': keys}, _session)
+    step_dir = debug.log_step(ActionType.KEY, {'key': keys}, _session)
 
     _session.hotkey(*key_list)
 
