@@ -1,0 +1,19 @@
+[project]
+name = "remote-desktop-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mss>=10.1.0",
+    "pyautogui>=0.9.54",
+    "python-xlib>=0.33",
+    "structlog>=25.5.0",
+    "vncdotool>=1.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "types-pyautogui>=0.9.3.20241230",
+]

@@ -1,0 +1,16 @@
+services:
+  rdp-server:
+    image: danchitnis/xrdp:ubuntu-xfce
+    ports:
+      - "3389:3389"
+    command: ubuntu ubuntu yes
+    shm_size: '2gb'
+
+  vnc-server:
+    image: accetto/ubuntu-vnc-xfce-g3:24.04
+    container_name: vnc-test-server
+    ports:
+      - "5901:5901"
+    environment:
+      - VNC_PW=ubuntu
+    shm_size: '1gb'
