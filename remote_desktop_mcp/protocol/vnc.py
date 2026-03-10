@@ -72,3 +72,11 @@ class VNCSession(GUISession):
         logger.info('key_event', protocol='vnc', key=key.value)
         if self.client:
             self.client.keyPress(key.value)
+
+    def hotkey(self, *keys: str) -> None:
+        logger.info('hotkey', protocol='vnc', keys=list(keys))
+        if self.client:
+            for k in keys:
+                self.client.keyDown(k)
+            for k in reversed(keys):
+                self.client.keyUp(k)

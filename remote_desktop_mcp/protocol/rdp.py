@@ -137,3 +137,9 @@ class RDPSession(GUISession):
         self._set_display_env()
         import pyautogui
         pyautogui.press(key.value)
+
+    def hotkey(self, *keys: str) -> None:
+        logger.info('hotkey', protocol='rdp', keys=list(keys))
+        self._set_display_env()
+        import pyautogui
+        pyautogui.hotkey(*keys)

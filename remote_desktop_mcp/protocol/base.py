@@ -56,3 +56,7 @@ class GUISession(ABC):
     @abstractmethod
     def key_event(self, key: Key) -> None:
         """Send a keyboard event."""
+
+    @abstractmethod
+    def hotkey(self, *keys: str) -> None:
+        """Press a combination of keys simultaneously (e.g. 'ctrl', 'c')."""

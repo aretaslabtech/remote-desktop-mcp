@@ -1,3 +1,6 @@
+import atexit
+import signal
+
 import structlog
 from fastmcp import FastMCP
 
@@ -45,6 +48,10 @@ def set_session(session: GUISession) -> None:
     trace_path = debug.session_dir / 'trace.jsonl'
     _tracer = TraceLogger(trace_path, fps=5)
     logger.info('trace_started', path=str(trace_path))
+
+    # Ensure teardown runs even on abrupt exit or SIGTERM.
+    atexit.register(teardown)
+    signal.signal(signal.SIGTERM, lambda *_: teardown())
 
 
 def teardown() -> None:
@@ -187,6 +194,29 @@ def press_key(key_name: str) -> str:
     _notify('key', {'key': key_name})
     debug.log_after(step_dir, _session)
     return f"Pressed key: {key_name} (Debug: {step_dir})"
+
+
+@mcp.tool()
+def press_hotkey(keys: str) -> str:
+    """Press a key combination simultaneously, e.g. 'ctrl+c', 'cmd+space', 'ctrl+shift+t'.
+
+    Separate keys with '+'. Use the same key names as pyautogui (e.g. ctrl, alt,
+    shift, cmd, win, enter, space, tab, esc, f1-f12, or any single character).
+    """
+    if not _session:
+        return 'Error: No session active.'
+    key_list = [k.strip() for k in keys.split('+') if k.strip()]
+    if not key_list:
+        return 'Error: No keys provided.'
+
+    debug = get_debug_logger(_session.protocol)
+    step_dir = debug.log_step(ActionType.KEY, {'hotkey': keys}, _session)
+
+    _session.hotkey(*key_list)
+
+    _notify('hotkey', {'keys': keys})
+    debug.log_after(step_dir, _session)
+    return f"Pressed hotkey: {keys} (Debug: {step_dir})"
 
 
 @mcp.tool()
