@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server for remote desktop control (Local, RDP, VNC). This allows AI models like Claude to see and interact with your desktop.
 
+![demo](./examples/annotated.mp4)
+
 ## Quick Start
 
 The easiest way to install this server is via the Claude Desktop CLI:

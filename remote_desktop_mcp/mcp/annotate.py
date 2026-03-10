@@ -79,6 +79,12 @@ def annotate(
             help='Each idle gap between actions is collapsed to this many seconds in the output.',
         ),
     ] = _DEFAULT_IDLE_SECONDS,
+    speed: Annotated[
+        float,
+        typer.Option(
+            help='Global playback speedup factor applied on top of idle collapsing (e.g. 2.0 = 2× faster overall).',
+        ),
+    ] = 1.0,
 ) -> None:
     """Combine a raw screen recording with a JSONL trace to produce an annotated video."""
     if not video.exists():
@@ -109,9 +115,11 @@ def annotate(
 
     fps = segments[0][1].get('fps', fps_hint)
     total_segments = len(segments)
+    speed = max(1.0, speed)   # guard: must be >= 1
+    global_step = max(1, round(speed))   # keep every Nth frame
     typer.echo(
         f'segments={total_segments}  fps={fps}  '
-        f'actions={len(actions)}  idle_seconds={idle_seconds}s',
+        f'actions={len(actions)}  idle_seconds={idle_seconds}s  speed={speed:.1f}×',
     )
 
     active_intervals = _build_active_intervals(
@@ -184,6 +192,10 @@ def annotate(
             reader: Any = imageio.get_reader(str(seg_path))
 
             for frame_idx, frame_array in enumerate(reader):
+                # Global speed: skip frames that don't fall on the step boundary
+                if global_step > 1 and (frame_idx % global_step) != 0:
+                    continue
+
                 frame_ts = seg_start + frame_idx / fps
                 elapsed = frame_ts - session_start
                 is_active = _in_active_window(frame_ts, active_intervals)
@@ -229,7 +241,7 @@ def annotate(
     )
     typer.echo(
         f'  Source duration: {_fmt_duration(dur_s)}'
-        f'  →  Output duration: ~{_fmt_duration(_estimate_output_duration(dur_s, active_intervals, idle_seconds))}',
+        f'  →  Output duration: ~{_fmt_duration(_estimate_output_duration(dur_s, active_intervals, idle_seconds) / speed)}',
     )
     typer.echo(f'  Processing time: {_fmt_duration(t_elapsed)}')
 
