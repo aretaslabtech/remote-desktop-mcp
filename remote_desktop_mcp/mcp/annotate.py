@@ -43,7 +43,7 @@ _DEFAULT_TTL: float = 1.5
 _DEFAULT_IDLE_SECONDS: float = 0.3   # each idle span → 0.3 s in output
 _ACTIVE_PRE: float = 0.2   # seconds before a UI action shown at normal speed
 _ACTIVE_POST: float = 1.0  # seconds after  a UI action shown at normal speed
-_HUD_H: int = 48           # height of 2-line HUD bar appended below the frame
+_HUD_H: int = 66           # height of 3-line HUD bar appended below the frame
 
 # Only these action types are considered real UI interactions that pause fast-forward.
 _UI_ACTIONS: frozenset[str] = frozenset({
@@ -150,14 +150,29 @@ def annotate(
         str(output), fps=fps, macro_block_size=None,
     )
 
+    _SKIP_META_KEYS = {
+        'timestamp', 'duration', 'fps',
+        'segments', 'actions', 'idle_seconds', 'type',
+    }
+    extra_fields = [
+        f'{k}: {v}'
+        for k, v in session_meta.items()
+        if k not in _SKIP_META_KEYS and isinstance(v, (str, int, float, bool))
+    ]
+    action_timestamps = [a['timestamp'] for a in actions]
+
     hud_meta = {
         'start_str': datetime.fromtimestamp(
             session_meta.get('timestamp', session_start), tz=timezone.utc,
         ).strftime('%Y-%m-%d %H:%M:%S UTC') if session_meta.get('timestamp', session_start) else 'unknown',
         'dur_str': _fmt_duration(dur_s),
-        'actions': len(actions),
+        'total_dur': dur_s,
+        'total_actions': len(actions),
         'fps': fps,
         'segments': total_segments,
+        'extra_fields': extra_fields,
+        'action_list': actions,
+        'action_timestamps': action_timestamps,
     }
 
     try:
@@ -367,46 +382,71 @@ def _draw_hud(
     speed_label: str,
     hud_meta: dict,
 ) -> Image.Image:
-    """Append a 2-line black HUD bar *below* the frame (canvas grows downward).
+    """Append a 3-line black HUD bar *below* the frame (canvas grows downward).
 
-    Line 1 — session metadata: start UTC, total duration, action count, FPS.
-    Line 2 — live position: elapsed time, current UTC wall clock, speedup badge.
+    Line 1 — static session metadata (start UTC, duration, FPS, extra fields).
+    Line 2 — live position: elapsed, UTC wall clock, progress %, speedup badge.
+    Line 3 — action context: last completed action + next upcoming action.
     """
     w, h = img.size
     canvas = Image.new('RGB', (w, h + _HUD_H), (0, 0, 0))
     canvas.paste(img, (0, 0))
     draw = ImageDraw.Draw(canvas)
     font = _load_font(12)
+    line_h = _HUD_H // 3   # height per HUD line (~22 px)
 
     # Separator line between video and HUD
     draw.line([(0, h), (w, h)], fill=(40, 40, 60), width=1)
 
-    # Line 1: session metadata
+    # ---- Line 1: static session metadata ---------------------------------- #
     segs = hud_meta.get('segments', 1)
     seg_part = f'  │  {segs} seg' + \
         ('s' if segs != 1 else '') if segs > 1 else ''
+    extra = ''.join(f'  │  {e}' for e in hud_meta.get('extra_fields', []))
     meta_line = (
         f"⏺  {hud_meta.get('start_str', '?')}"
         f"  │  {hud_meta.get('dur_str', '?')}"
-        f"  │  {hud_meta.get('actions', '?')} actions"
+        f"  │  {hud_meta.get('total_actions', '?')} actions"
         f"  │  {hud_meta.get('fps', '?')} fps"
-        f"{seg_part}"
+        f"{seg_part}{extra}"
     )
-    y1 = h + 4
-    draw.text((8, y1), meta_line, fill=(130, 155, 200), font=font)
+    draw.text((8, h + 3), meta_line, fill=(130, 155, 200), font=font)
 
-    # Line 2: live position
+    # ---- Line 2: live position + progress --------------------------------- #
     wall_utc = datetime.fromtimestamp(
         frame_ts, tz=timezone.utc,
-    ).strftime('%H:%M:%S')
+    ).strftime('%Y-%m-%d %H:%M:%S')
     elapsed_str = _fmt_duration(elapsed)
-    y2 = h + _HUD_H // 2 + 2
-    draw.text(
-        (8, y2), f'{elapsed_str}  │  {wall_utc} UTC',
-        fill=(200, 220, 255), font=font,
-    )
+    total_dur = hud_meta.get('total_dur', 1.0)
+    pct = min(100.0, elapsed / max(total_dur, 0.001) * 100)
+    pos_line = f'⏱  +{elapsed_str}  │  {wall_utc} UTC  │  {pct:.1f}%'
+    draw.text((8, h + line_h + 3), pos_line, fill=(200, 220, 255), font=font)
     if speed_label:
-        draw.text((w - 90, y2), speed_label, fill=(255, 200, 60), font=font)
+        draw.text(
+            (w - 90, h + line_h + 3), speed_label,
+            fill=(255, 200, 60), font=font,
+        )
+
+    # ---- Line 3: last / next action --------------------------------------- #
+    action_list: list[dict] = hud_meta.get('action_list', [])
+    action_ts: list[float] = hud_meta.get('action_timestamps', [])
+    if action_list and action_ts:
+        idx = bisect.bisect_right(action_ts, frame_ts) - 1
+        last_str = f'◄ {_fmt_action_short(action_list[idx])}' if idx >= 0 else '◄ —'
+        if idx + 1 < len(action_list):
+            nxt = action_list[idx + 1]
+            delay = nxt['timestamp'] - frame_ts
+            next_str = f'► {_fmt_action_short(nxt)}  (in {delay:.1f}s)'
+        else:
+            next_str = '► —'
+        act_line = f'{last_str}  │  {next_str}'
+    else:
+        act_line = ''
+    draw.text(
+        (8, h + 2 * line_h + 3), act_line,
+        fill=(170, 210, 140), font=font,
+    )
+
     return canvas
 
 
@@ -513,6 +553,33 @@ def _draw_text_banner(img: Image.Image, action: str, params: dict, alpha_f: floa
 # =========================================================================== #
 # Utilities
 # =========================================================================== #
+
+def _fmt_action_short(rec: dict) -> str:
+    """One-line summary of a trace action record."""
+    action = rec.get('action', '?')
+    params = rec.get('params', {})
+    if action == 'click':
+        btn = params.get('button', 'left')
+        btn_sym = {'left': '←', 'right': '→', 'middle': '↔'}.get(btn, btn)
+        return f'click {btn_sym} ({params.get("x", 0)}, {params.get("y", 0)})'
+    if action == 'type':
+        t = params.get('text', '')
+        if len(t) > 24:
+            t = t[:21] + '…'
+        return f'type {repr(t)}'
+    if action == 'key':
+        return f'key [{params.get("key", "?").upper()}]'
+    if action == 'hotkey':
+        return f'hotkey [{params.get("keys", "?").upper()}]'
+    if action == 'scroll':
+        direction = '↑' if params.get('clicks', 0) > 0 else '↓'
+        return f'scroll {direction}{abs(params.get("clicks", 1))}'
+    if action == 'move':
+        return f'move ({params.get("x", 0)}, {params.get("y", 0)})'
+    if action == 'screenshot':
+        return 'screenshot'
+    return action
+
 
 def _crop_even(img: Image.Image) -> Image.Image:
     w, h = img.size
