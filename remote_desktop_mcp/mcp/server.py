@@ -176,7 +176,16 @@ def type_text(text: str) -> str:
 
 @mcp.tool()
 def press_key(key_name: str) -> str:
-    """Press a special key (e.g., enter, backspace, tab, space, esc, up, down, left, right)."""
+    """Press a single special key.
+
+    Supported keys: enter, backspace, delete, tab, space, esc,
+    up, down, left, right, home, end, pageup, pagedown, insert,
+    f1-f12, shift, ctrl, alt, cmd (macOS Command), win, option,
+    capslock, numlock, scrolllock, printscreen,
+    volumeup, volumedown, volumemute.
+
+    For key combinations (e.g. cmd+space, ctrl+c) use press_hotkey instead.
+    """
     if not _session:
         return 'Error: No session active.'
     try:
