@@ -1,3 +1,5 @@
+import sys
+
 import structlog
 import typer
 
@@ -12,6 +14,7 @@ structlog.configure(
         structlog.processors.TimeStamper(fmt='iso'),
         structlog.processors.JSONRenderer(),
     ],
+    logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
 )
 
 app = typer.Typer(
