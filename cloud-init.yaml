@@ -1,0 +1,81 @@
+#cloud-config
+
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+users:
+  - name: ubuntu
+    groups: [sudo, adm]
+    shell: /bin/bash
+    plain_text_passwd: ubuntu
+    lock_passwd: false
+
+# ---------------------------------------------------------------------------
+# Boot commands (run once, very early — before apt/packages)
+# ---------------------------------------------------------------------------
+bootcmd:
+  # Permanently pin snapd to -10 so it is never installed
+  - |
+    cat > /etc/apt/preferences.d/nosnap <<'EOF'
+    Package: snapd
+    Pin: release a=*
+    Pin-Priority: -10
+    EOF
+  # Fetch the Mozilla repo signing key
+  - install -d -m 0755 /etc/apt/keyrings
+  - >
+    wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg
+    -O /etc/apt/keyrings/packages.mozilla.org.asc
+  # Add Mozilla APT source
+  - |
+    echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
+      > /etc/apt/sources.list.d/mozilla.list
+  # Pin Mozilla packages above Canonical's Firefox snap redirect
+  - |
+    cat > /etc/apt/preferences.d/mozilla <<'EOF'
+    Package: *
+    Pin: origin packages.mozilla.org
+    Pin-Priority: 1000
+    EOF
+
+# ---------------------------------------------------------------------------
+# Package management
+# ---------------------------------------------------------------------------
+package_update: true
+package_upgrade: false
+
+packages:
+  - xfce4
+  - xfce4-goodies
+  - firefox
+  - xrdp
+  - dbus-x11
+  - nodejs
+  - npm
+  - git
+  - curl
+
+# ---------------------------------------------------------------------------
+# Run commands (after packages are installed)
+# ---------------------------------------------------------------------------
+runcmd:
+  # Remove snapd if it sneaked in
+  - apt-get purge -y snapd || true
+  # Remove screen-locking packages that conflict with headless RDP sessions
+  - apt-get remove -y light-locker xscreensaver || true
+  - apt-get autoremove -y
+  # Configure XFCE4 as the default X session for ubuntu
+  - echo "xfce4-session" > /home/ubuntu/.xsession
+  - chown ubuntu:ubuntu /home/ubuntu/.xsession
+  # Install Claude Code globally
+  - npm install -g @anthropic-ai/claude-code
+  # Enable and start XRDP
+  - systemctl enable xrdp
+  - systemctl restart xrdp
+
+# ---------------------------------------------------------------------------
+# Final message (visible in instance console log)
+# ---------------------------------------------------------------------------
+final_message: |
+  Setup complete. Connect via RDP on port 3389.
+  Username: ubuntu  |  Password: ubuntu
