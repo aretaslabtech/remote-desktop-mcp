@@ -8,6 +8,7 @@ import typer
 from ..mcp.debug import ActionType
 from ..mcp.debug import get_debug_logger
 from ..mcp.trace import TraceLogger
+from ..protocol.adb import ADBSession
 from ..protocol.base import MouseButton
 from ..protocol.local import LocalSession
 from ..protocol.rdp import RDPSession
@@ -19,6 +20,65 @@ app = typer.Typer(
     help='Remote Desktop Debug CLI - Test desktop protocols and actions independently.',
     no_args_is_help=True,
 )
+
+# ADB Debug
+debug_adb_app = typer.Typer(help='Debug ADB connection.')
+app.add_typer(debug_adb_app, name='adb')
+
+
+@debug_adb_app.command(name='screenshot')
+def debug_adb_screenshot(
+    serial: Annotated[
+        str | None,
+        typer.Option(help='ADB serial', envvar='REMOTE_DESKTOP_ADB_SERIAL'),
+    ] = None,
+    output: str = 'adb_screenshot.png',
+):
+    session = ADBSession(serial=serial)
+    session.start()
+
+    debug = get_debug_logger('adb')
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
+    step_dir = debug.log_step(
+        ActionType.SCREENSHOT, {
+            'serial': serial, 'output': output,
+        }, session,
+    )
+    session.take_screenshot(output)
+    tracer.log_action('screenshot', {'output_path': output})
+    debug.log_after(step_dir, session)
+
+    tracer.close()
+    session.stop()
+    print(f"Screenshot saved to {output} (Debug: {step_dir})")
+
+
+@debug_adb_app.command(name='click')
+def debug_adb_click(
+    x: int, y: int,
+    serial: Annotated[
+        str | None,
+        typer.Option(help='ADB serial', envvar='REMOTE_DESKTOP_ADB_SERIAL'),
+    ] = None,
+):
+    session = ADBSession(serial=serial)
+    session.start()
+
+    debug = get_debug_logger('adb')
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
+    step_dir = debug.log_step(
+        ActionType.CLICK, {'x': x, 'y': y}, session,
+    )
+    session.click(x, y)
+    tracer.log_action('click', {'x': x, 'y': y})
+    debug.log_after(step_dir, session)
+
+    tracer.close()
+    session.stop()
+    print(f"Clicked at ({x}, {y}) (Debug: {step_dir})")
+
 
 # Local Debug
 debug_local_app = typer.Typer(help='Debug local desktop.')

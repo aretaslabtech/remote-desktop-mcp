@@ -5,6 +5,7 @@ from typing import cast
 import structlog
 import typer
 
+from ..protocol.adb import ADBSession
 from ..protocol.local import LocalSession
 from ..protocol.rdp import RDPSession
 from ..protocol.vnc import VNCSession
@@ -18,6 +19,33 @@ app = typer.Typer(
     help='Start the MCP server for various protocols.',
     no_args_is_help=True,
 )
+
+
+@app.command(name='adb')
+def mcp_adb(
+    serial: Annotated[
+        str | None,
+        typer.Option(
+            help='ADB device serial number.',
+            envvar='REMOTE_DESKTOP_ADB_SERIAL',
+        ),
+    ] = None,
+    record: Annotated[
+        bool,
+        typer.Option(
+            help='Enable continuous screen recording for the whole session.',
+        ),
+    ] = False,
+):
+    """Start MCP server for an Android device via ADB."""
+    logger.info('starting_adb_mcp_server', serial=serial, record=record)
+    session = ADBSession(serial=serial)
+    set_session(session, record=record)
+    try:
+        mcp.run()
+    finally:
+        teardown()
+        session.stop()
 
 
 @app.command(name='local')
