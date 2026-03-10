@@ -4,9 +4,26 @@ A Model Context Protocol (MCP) server for remote desktop control (Local, RDP, VN
 
 ## Quick Start
 
+The easiest way to install this server is via the Claude Desktop CLI:
+
+```bash
+# Local Desktop
+claude mcp add remote-desktop -- uvx remote-desktop-mcp mcp local
+
+# RDP
+claude mcp add remote-desktop-rdp \
+    -e REMOTE_DESKTOP_RDP_HOST=192.168.1.1 \
+    -e REMOTE_DESKTOP_RDP_USER=ubuntu \
+    -e REMOTE_DESKTOP_RDP_PASSWORD=ubuntu \
+    -- uvx remote-desktop-mcp mcp rdp
+
+# VNC
+claude mcp add remote-desktop-vnc \
+    -e REMOTE_DESKTOP_VNC_HOST=127.0.0.1:5900 \
+    -e REMOTE_DESKTOP_VNC_PASSWORD=password \
+    -- uvx remote-desktop-mcp mcp vnc
 ```
-claude mcp add --transport stdio remote-desktop-mcp -- uvx remote-desktop-mcp
-```
+
 ## Environment Variables
 
 | Variable | Description |
@@ -27,7 +44,7 @@ claude mcp add --transport stdio remote-desktop-mcp -- uvx remote-desktop-mcp
 ## Requirements
 
 - Python 3.12+
-- For RDP: `xfreerdp` and `Xvfb` must be installed on the host.
+- For RDP: `xfreerdp` and `Xvfb` must be installed.
 
 ## License
 
