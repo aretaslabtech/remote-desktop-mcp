@@ -6,8 +6,9 @@ Features
   segmented recorder (``recording_0000.mp4``, ``recording_0001.mp4``, …).
 * **Idle acceleration**: stretches with no agent activity are played at
   ``--idle-speed`` × normal speed (default 8×) to keep the video concise.
-* **Metadata splash**: a 3-second intro card shows session details.
-* **HUD overlay**: elapsed time and a speedup badge are drawn on every frame.
+* **HUD bar**: a 2-line bar appended below each frame shows session metadata
+  (start UTC, total duration, actions, FPS) on the top row and the live
+  elapsed/wall-clock UTC time + speedup badge on the bottom row.
 * Action annotations: click ripples, move crosshairs, scroll arrows, text
   banners (same as before).
 
@@ -23,6 +24,7 @@ from __future__ import annotations
 import bisect
 import json
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Annotated
 from typing import Any
@@ -41,8 +43,7 @@ _DEFAULT_TTL: float = 1.5
 _DEFAULT_IDLE_SECONDS: float = 0.3   # each idle span → 0.3 s in output
 _ACTIVE_PRE: float = 0.2   # seconds before a UI action shown at normal speed
 _ACTIVE_POST: float = 1.0  # seconds after  a UI action shown at normal speed
-_SPLASH_SECONDS: float = 3.0
-_HUD_H: int = 32           # height of external HUD bar appended below the frame
+_HUD_H: int = 48           # height of 2-line HUD bar appended below the frame
 
 # Only these action types are considered real UI interactions that pause fast-forward.
 _UI_ACTIONS: frozenset[str] = frozenset({
@@ -149,19 +150,17 @@ def annotate(
         str(output), fps=fps, macro_block_size=None,
     )
 
-    try:
-        splash_meta = {
-            **session_meta,
-            'segments': total_segments,
-            'actions': len(actions),
-            'idle_seconds': idle_seconds,
-            'duration': dur_s,
-            'fps': fps,
-        }
-        for splash_img in _make_splash_frames(frame_size, fps, _SPLASH_SECONDS, splash_meta):
-            splash_img = _crop_even(splash_img)
-            writer.append_data(np.asarray(splash_img))
+    hud_meta = {
+        'start_str': datetime.fromtimestamp(
+            session_meta.get('timestamp', session_start), tz=timezone.utc,
+        ).strftime('%Y-%m-%d %H:%M:%S UTC') if session_meta.get('timestamp', session_start) else 'unknown',
+        'dur_str': _fmt_duration(dur_s),
+        'actions': len(actions),
+        'fps': fps,
+        'segments': total_segments,
+    }
 
+    try:
         for seg_idx, (seg_path, seg_meta) in enumerate(segments):
             seg_start: float = seg_meta.get('start_time', session_start)
             typer.echo(
@@ -195,7 +194,7 @@ def annotate(
                 if active_anns:
                     img = _render_annotations(img, active_anns, ttl)
 
-                img = _draw_hud(img, elapsed, frame_ts, speed_label)
+                img = _draw_hud(img, elapsed, frame_ts, speed_label, hud_meta)
                 img = _crop_even(img)
                 writer.append_data(np.asarray(img))
 
@@ -215,8 +214,7 @@ def annotate(
     )
     typer.echo(
         f'  Source duration: {_fmt_duration(dur_s)}'
-        f'  →  Output duration: ~{_fmt_duration(_estimate_output_duration(dur_s, active_intervals, idle_seconds))}'
-        f'  +{_fmt_duration(_SPLASH_SECONDS)} splash',
+        f'  →  Output duration: ~{_fmt_duration(_estimate_output_duration(dur_s, active_intervals, idle_seconds))}',
     )
     typer.echo(f'  Processing time: {_fmt_duration(t_elapsed)}')
 
@@ -359,136 +357,56 @@ def _idle_frame_decision(
 
 
 # =========================================================================== #
-# Splash screen
-# =========================================================================== #
-
-def _make_splash_frames(
-    size: tuple[int, int],
-    fps: int,
-    duration: float,
-    meta: dict,
-) -> list[Image.Image]:
-    w, h = size
-    # Splash occupies the full canvas including HUD bar height so the video
-    # stream has a consistent resolution from the first frame.
-    full_h = h + _HUD_H
-    total = max(1, int(duration * fps))
-    font_title = _load_font(28)
-    font_body = _load_font(18)
-    font_small = _load_font(14)
-
-    start_ts = meta.get('timestamp', 0.0)
-    start_str = datetime.fromtimestamp(start_ts).strftime(
-        '%Y-%m-%d %H:%M:%S',
-    ) if start_ts else 'unknown'
-    dur_str = _fmt_duration(meta.get('duration', 0.0))
-
-    lines: list[tuple[str, Any, tuple[int, int, int]]] = [
-        (
-            'Remote Desktop MCP',
-            font_title, (120, 220, 255),
-        ),
-        (
-            'Session Recording',
-            font_body, (180, 180, 220),
-        ),
-        (
-            '',
-            font_body, (255, 255, 255),
-        ),
-        (
-            f"Start:      {start_str}",
-            font_body, (220, 220, 220),
-        ),
-        (
-            f"Duration:   {dur_str}",
-            font_body, (220, 220, 220),
-        ),
-        (
-            f"FPS:        {meta.get('fps', '?')}",
-            font_body, (220, 220, 220),
-        ),
-        (
-            f"Segments:   {meta.get('segments', '?')}",
-            font_body, (220, 220, 220),
-        ),
-        (
-            f"Actions:    {meta.get('actions', '?')}",
-            font_body, (220, 220, 220),
-        ),
-        (
-            f"Idle span:  {meta.get('idle_seconds', '?')}s \u2192 1s each",
-            font_small, (160, 200, 160),
-        ),
-    ]
-
-    frames: list[Image.Image] = []
-    for i in range(total):
-        t = i / fps
-        if t < 0.5:
-            alpha = t / 0.5
-        elif t > duration - 0.5:
-            alpha = (duration - t) / 0.5
-        else:
-            alpha = 1.0
-        alpha = max(0.0, min(1.0, alpha))
-
-        img = Image.new('RGB', (w, full_h), (12, 15, 25))
-        draw = ImageDraw.Draw(img)
-
-        # Accent line
-        bar_col = (int(80 * alpha), int(160 * alpha), int(255 * alpha))
-        draw.rectangle(
-            [(0, full_h // 3 - 32), (w, full_h // 3 - 28)], fill=bar_col,
-        )
-        draw.rectangle(
-            [
-                (0, full_h // 3 + len(lines) * 32 + 4),
-                (w, full_h // 3 + len(lines) * 32 + 8),
-            ], fill=bar_col,
-        )
-
-        line_h = 32
-        total_text_h = len(lines) * line_h
-        top = (full_h - total_text_h) // 2
-
-        for j, (text, font, colour) in enumerate(lines):
-            if not text:
-                continue
-            r, g, b = colour
-            fa = int(alpha * 255)
-            draw.text(
-                (w // 2, top + j * line_h), text,
-                fill=(r, g, b, fa), font=font, anchor='mm',
-            )
-
-        frames.append(img)
-
-    return frames
-
-
-# =========================================================================== #
 # HUD overlay
 # =========================================================================== #
 
-def _draw_hud(img: Image.Image, elapsed: float, frame_ts: float, speed_label: str) -> Image.Image:
-    """Append a solid black HUD bar *below* the frame (canvas grows downward)."""
+def _draw_hud(
+    img: Image.Image,
+    elapsed: float,
+    frame_ts: float,
+    speed_label: str,
+    hud_meta: dict,
+) -> Image.Image:
+    """Append a 2-line black HUD bar *below* the frame (canvas grows downward).
+
+    Line 1 — session metadata: start UTC, total duration, action count, FPS.
+    Line 2 — live position: elapsed time, current UTC wall clock, speedup badge.
+    """
     w, h = img.size
     canvas = Image.new('RGB', (w, h + _HUD_H), (0, 0, 0))
     canvas.paste(img, (0, 0))
     draw = ImageDraw.Draw(canvas)
-    font = _load_font(14)
-    wall_str = datetime.fromtimestamp(frame_ts).strftime('%H:%M:%S')
+    font = _load_font(12)
+
+    # Separator line between video and HUD
+    draw.line([(0, h), (w, h)], fill=(40, 40, 60), width=1)
+
+    # Line 1: session metadata
+    segs = hud_meta.get('segments', 1)
+    seg_part = f'  │  {segs} seg' + \
+        ('s' if segs != 1 else '') if segs > 1 else ''
+    meta_line = (
+        f"⏺  {hud_meta.get('start_str', '?')}"
+        f"  │  {hud_meta.get('dur_str', '?')}"
+        f"  │  {hud_meta.get('actions', '?')} actions"
+        f"  │  {hud_meta.get('fps', '?')} fps"
+        f"{seg_part}"
+    )
+    y1 = h + 4
+    draw.text((8, y1), meta_line, fill=(130, 155, 200), font=font)
+
+    # Line 2: live position
+    wall_utc = datetime.fromtimestamp(
+        frame_ts, tz=timezone.utc,
+    ).strftime('%H:%M:%S')
     elapsed_str = _fmt_duration(elapsed)
+    y2 = h + _HUD_H // 2 + 2
     draw.text(
-        (8, h + (_HUD_H - 14) // 2),
-        f'{elapsed_str}  {wall_str}', fill=(200, 220, 255), font=font,
+        (8, y2), f'{elapsed_str}  │  {wall_utc} UTC',
+        fill=(200, 220, 255), font=font,
     )
     if speed_label:
-        draw.text(
-            (w - 90, h + (_HUD_H - 14) // 2), speed_label,
-            fill=(255, 200, 60), font=font,
-        )
+        draw.text((w - 90, y2), speed_label, fill=(255, 200, 60), font=font)
     return canvas
 
 
