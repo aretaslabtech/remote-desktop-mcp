@@ -10,6 +10,7 @@ from ..protocol.rdp import RDPSession
 from ..protocol.vnc import VNCSession
 from .server import mcp
 from .server import set_session
+from .server import teardown
 
 logger = structlog.get_logger()
 
@@ -36,6 +37,7 @@ def mcp_local(
     try:
         mcp.run()
     finally:
+        teardown()
         session.stop()
 
 
@@ -87,6 +89,7 @@ def mcp_rdp(
     try:
         mcp.run()
     finally:
+        teardown()
         session.stop()
 
 
@@ -114,6 +117,7 @@ def mcp_vnc(
     try:
         mcp.run()
     finally:
+        teardown()
         session.stop()
 
 

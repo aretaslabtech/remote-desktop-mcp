@@ -1,3 +1,4 @@
+import structlog
 from fastmcp import FastMCP
 
 from ..protocol.base import GUISession
@@ -5,17 +6,53 @@ from ..protocol.base import Key
 from ..protocol.base import MouseButton
 from .debug import ActionType
 from .debug import get_debug_logger
+from .recorder import ScreenRecorder
+
+logger = structlog.get_logger()
 
 mcp = FastMCP('Remote Desktop MCP')
 
 # Global session instance
 _session: GUISession | None = None
 
+# Global recorder instance (None when not recording)
+_recorder: ScreenRecorder | None = None
+
 
 def set_session(session: GUISession) -> None:
-    global _session
+    """Set the active session and automatically start silent screen recording."""
+    global _session, _recorder
     _session = session
     _session.start()
+
+    # Auto-start recording; output alongside the debug session directory.
+    debug = get_debug_logger(session.protocol)
+    output_path = str(debug.session_dir / 'recording.mp4')
+    _recorder = ScreenRecorder()
+    try:
+        _recorder.start(session, output_path=output_path, fps=5)
+        logger.info('auto_recording_started', output=output_path)
+    except Exception as exc:
+        logger.warning('auto_recording_start_failed', error=str(exc))
+        _recorder = None
+
+
+def teardown() -> None:
+    """Stop the active recording and save the video.  Call before session.stop()."""
+    global _recorder
+    if _recorder is not None and _recorder.is_running:
+        try:
+            path = _recorder.stop()
+            logger.info('auto_recording_saved', path=str(path))
+        except Exception as exc:
+            logger.warning('auto_recording_stop_failed', error=str(exc))
+        _recorder = None
+
+
+def _notify(action_type: str, params: dict) -> None:
+    """Forward an action notification to the active recorder (if any)."""
+    if _recorder is not None and _recorder.is_running:
+        _recorder.notify_action(action_type, params)
 
 
 @mcp.tool()
@@ -34,6 +71,7 @@ def take_screenshot(output_path: str = 'screenshot.png') -> str:
 
     _session.take_screenshot(output_path)
 
+    _notify('screenshot', {'output_path': output_path})
     debug.log_after(step_dir, _session)
     return f"Screenshot saved to {output_path} (Debug: {step_dir})"
 
@@ -56,6 +94,7 @@ def mouse_click(x: int, y: int, button: str = 'left') -> str:
 
     _session.click(x, y, btn)
 
+    _notify('click', {'x': x, 'y': y, 'button': button})
     debug.log_after(step_dir, _session)
     return f"Clicked {button} at ({x}, {y}) (Debug: {step_dir})"
 
@@ -72,6 +111,7 @@ def mouse_move(x: int, y: int) -> str:
 
     _session.move(x, y)
 
+    _notify('move', {'x': x, 'y': y})
     debug.log_after(step_dir, _session)
     return f"Moved mouse to ({x}, {y}) (Debug: {step_dir})"
 
@@ -88,6 +128,7 @@ def mouse_scroll(clicks: int) -> str:
 
     _session.scroll(clicks)
 
+    _notify('scroll', {'clicks': clicks})
     debug.log_after(step_dir, _session)
     return f"Scrolled {clicks} clicks (Debug: {step_dir})"
 
@@ -104,6 +145,7 @@ def type_text(text: str) -> str:
 
     _session.type_text(text)
 
+    _notify('type', {'text': text})
     debug.log_after(step_dir, _session)
     return f"Typed: {text} (Debug: {step_dir})"
 
@@ -125,5 +167,70 @@ def press_key(key_name: str) -> str:
 
     _session.key_event(key)
 
+    _notify('key', {'key': key_name})
     debug.log_after(step_dir, _session)
     return f"Pressed key: {key_name} (Debug: {step_dir})"
+
+
+@mcp.tool()
+def start_recording(output_path: str = 'recording.mp4', fps: int = 5) -> str:
+    """Start a continuous screen recording of the remote desktop session.
+
+    Captures the live screen at the given frame-rate and overlays transient
+    visual annotations for every action:
+    - **Left click**: red shrinking ripple circle + crosshair.
+    - **Right click**: blue shrinking ripple circle + crosshair.
+    - **Mouse move**: yellow crosshair at the destination.
+    - **Type / key-press**: semi-transparent bottom banner with the text.
+
+    Call :func:`stop_recording` to finish and save the video.
+
+    Args:
+        output_path: Destination file for the MP4 video.
+            Falls back to an animated GIF if ffmpeg is unavailable.
+        fps: Capture frame-rate (default 5).  Higher values give smoother
+            video at the cost of more CPU / disk I/O.
+
+    Returns:
+        Confirmation message.
+    """
+    global _recorder
+    if not _session:
+        return 'Error: No session active.'
+
+    # Stop any existing recording (auto or previous manual) before starting a new one.
+    if _recorder is not None and _recorder.is_running:
+        try:
+            saved = _recorder.stop()
+            logger.info('previous_recording_saved', path=str(saved))
+        except Exception as exc:
+            logger.warning('previous_recording_stop_failed', error=str(exc))
+        _recorder = None
+
+    _recorder = ScreenRecorder()
+    try:
+        _recorder.start(_session, output_path=output_path, fps=fps)
+        return f"Recording started → {output_path}  (fps={fps})"
+    except Exception as exc:
+        _recorder = None
+        return f"Error starting recording: {exc}"
+
+
+@mcp.tool()
+def stop_recording() -> str:
+    """Stop the active screen recording and save the video file.
+
+    Returns:
+        Path to the saved video file.
+    """
+    global _recorder
+    if _recorder is None or not _recorder.is_running:
+        return 'Error: No recording is currently active.'
+
+    try:
+        path = _recorder.stop()
+        _recorder = None
+        return f"Recording saved to: {path}"
+    except Exception as exc:
+        _recorder = None
+        return f"Error stopping recording: {exc}"

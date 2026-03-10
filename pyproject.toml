@@ -6,13 +6,15 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=3.1.0",
+    "imageio>=2.37.3",
+    "imageio-ffmpeg>=0.6.0",
     "mss>=10.1.0",
+    "numpy>=2.4.3",
     "pyautogui>=0.9.54",
     "python-xlib>=0.33",
     "structlog>=25.5.0",
     "typer>=0.24.1",
     "vncdotool>=1.2.0",
-    "Pillow>=10.0.0",
 ]
 
 [build-system]
