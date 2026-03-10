@@ -1,5 +1,6 @@
 import atexit
 import signal
+from pathlib import Path
 
 import structlog
 from fastmcp import FastMCP
@@ -237,23 +238,18 @@ def press_hotkey(keys: str) -> str:
 
 
 @mcp.tool()
-def start_recording(output_path: str = 'recording.mp4', fps: int = 5) -> str:
+def start_recording(output_path: str = 'recording.mp4', fps: int = 5, segment_seconds: int = 60) -> str:
     """Start a continuous screen recording of the remote desktop session.
 
-    Captures the live screen at the given frame-rate and overlays transient
-    visual annotations for every action:
-    - **Left click**: red shrinking ripple circle + crosshair.
-    - **Right click**: blue shrinking ripple circle + crosshair.
-    - **Mouse move**: yellow crosshair at the destination.
-    - **Type / key-press**: semi-transparent bottom banner with the text.
-
-    Call :func:`stop_recording` to finish and save the video.
+    Recording is split into segment files (e.g. recording_0000.mp4,
+    recording_0001.mp4, …) so that data is written to disk incrementally
+    rather than held entirely in memory.
 
     Args:
-        output_path: Destination file for the MP4 video.
-            Falls back to an animated GIF if ffmpeg is unavailable.
-        fps: Capture frame-rate (default 5).  Higher values give smoother
-            video at the cost of more CPU / disk I/O.
+        output_path: Template path for segment files.  The stem and directory
+            are reused; actual files are named ``<stem>_NNNN.mp4``.
+        fps: Capture frame-rate (default 5).
+        segment_seconds: Duration of each segment file in seconds (default 60).
 
     Returns:
         Confirmation message.
@@ -273,8 +269,15 @@ def start_recording(output_path: str = 'recording.mp4', fps: int = 5) -> str:
 
     _recorder = ScreenRecorder()
     try:
-        _recorder.start(_session, output_path=output_path, fps=fps)
-        return f"Recording started \u2192 {output_path}  (fps={fps})\nTrace: {_tracer.path if _tracer else 'n/a'}"
+        _recorder.start(
+            _session, output_path=output_path,
+            fps=fps, segment_seconds=segment_seconds,
+        )
+        return (
+            f"Recording started → {Path(output_path).parent}/  "
+            f"(fps={fps}, segment={segment_seconds}s)\n"
+            f"Trace: {_tracer.path if _tracer else 'n/a'}"
+        )
     except Exception as exc:
         _recorder = None
         return f"Error starting recording: {exc}"
@@ -292,9 +295,9 @@ def stop_recording() -> str:
         return 'Error: No recording is currently active.'
 
     try:
-        path = _recorder.stop()
+        out_dir = _recorder.stop()
         _recorder = None
-        return f"Recording saved to: {path}"
+        return f"Recording saved to: {out_dir}"
     except Exception as exc:
         _recorder = None
         return f"Error stopping recording: {exc}"
