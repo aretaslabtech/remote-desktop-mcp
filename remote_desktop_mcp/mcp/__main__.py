@@ -29,11 +29,17 @@ def mcp_local(
             envvar='REMOTE_DESKTOP_DISPLAY',
         ),
     ] = None,
+    record: Annotated[
+        bool,
+        typer.Option(
+            help='Enable continuous screen recording for the whole session.',
+        ),
+    ] = False,
 ):
     """Start MCP server for the local desktop."""
-    logger.info('starting_local_mcp_server', display=display)
+    logger.info('starting_local_mcp_server', display=display, record=record)
     session = LocalSession(display_num=display)
-    set_session(session)
+    set_session(session, record=record)
     try:
         mcp.run()
     finally:
@@ -75,17 +81,23 @@ def mcp_rdp(
             envvar='REMOTE_DESKTOP_RESOLUTION',
         ),
     ] = '1280x720',
+    record: Annotated[
+        bool,
+        typer.Option(
+            help='Enable continuous screen recording for the whole session.',
+        ),
+    ] = False,
 ):
     """Start MCP server for an RDP connection."""
     logger.info(
         'starting_rdp_mcp_server', host=host,
-        user=user, display=display,
+        user=user, display=display, record=record,
     )
     session = RDPSession(
         host=host, user=user, password=password,
         display_num=display, resolution=resolution,
     )
-    set_session(session)
+    set_session(session, record=record)
     try:
         mcp.run()
     finally:
@@ -109,11 +121,17 @@ def mcp_vnc(
             envvar='REMOTE_DESKTOP_VNC_PASSWORD',
         ),
     ] = None,
+    record: Annotated[
+        bool,
+        typer.Option(
+            help='Enable continuous screen recording for the whole session.',
+        ),
+    ] = False,
 ):
     """Start MCP server for a VNC connection."""
-    logger.info('starting_vnc_mcp_server', host=host)
+    logger.info('starting_vnc_mcp_server', host=host, record=record)
     session = VNCSession(host=host, password=password)
-    set_session(session)
+    set_session(session, record=record)
     try:
         mcp.run()
     finally:

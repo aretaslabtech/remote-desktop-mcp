@@ -26,23 +26,31 @@ _recorder: ScreenRecorder | None = None
 _tracer: TraceLogger | None = None
 
 
-def set_session(session: GUISession) -> None:
-    """Set the active session, start silent recording, and open the trace file."""
+def set_session(session: GUISession, record: bool = False) -> None:
+    """Set the active session and open the trace file.
+
+    Args:
+        session: The GUI session backend to use.
+        record: When True, also start a continuous raw screen recording.
+            Disabled by default to avoid producing large files during long
+            Claude Code sessions.  Pass ``--record`` on the CLI to enable.
+    """
     global _session, _recorder, _tracer
     _session = session
     _session.start()
 
     debug = get_debug_logger(session.protocol)
 
-    # Start raw screen recording (annotation-free).
-    output_path = str(debug.session_dir / 'recording.mp4')
-    _recorder = ScreenRecorder()
-    try:
-        _recorder.start(session, output_path=output_path, fps=5)
-        logger.info('auto_recording_started', output=output_path)
-    except Exception as exc:
-        logger.warning('auto_recording_start_failed', error=str(exc))
-        _recorder = None
+    # Optionally start raw screen recording (annotation-free).
+    if record:
+        output_path = str(debug.session_dir / 'recording.mp4')
+        _recorder = ScreenRecorder()
+        try:
+            _recorder.start(session, output_path=output_path, fps=5)
+            logger.info('auto_recording_started', output=output_path)
+        except Exception as exc:
+            logger.warning('auto_recording_start_failed', error=str(exc))
+            _recorder = None
 
     # Open JSONL trace file alongside the recording.
     trace_path = debug.session_dir / 'trace.jsonl'
