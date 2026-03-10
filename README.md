@@ -24,16 +24,35 @@ claude mcp add remote-desktop-vnc \
     -- uvx remote-desktop-mcp mcp vnc
 ```
 
+Quick test without mcp.
+
+```bash
+# Local Desktop
+uvx remote-desktop-mcp cli local screenshot
+
+# RDP
+export REMOTE_DESKTOP_RDP_HOST=192.168.1.1
+export REMOTE_DESKTOP_RDP_USER=ubuntu
+export REMOTE_DESKTOP_RDP_PASSWORD=ubuntu
+uvx remote-desktop-mcp cli rdp screenshot
+
+# VNC
+export REMOTE_DESKTOP_VNC_HOST=127.0.0.1:5900
+export REMOTE_DESKTOP_VNC_PASSWORD=password
+uvx remote-desktop-mcp cli vnc screenshot
+```
+
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `REMOTE_DESKTOP_DISPLAY` | Display number (e.g., `:0`) |
-| `REMOTE_DESKTOP_RDP_HOST` | RDP Host address |
-| `REMOTE_DESKTOP_RDP_USER` | RDP Username |
-| `REMOTE_DESKTOP_RDP_PASSWORD` | RDP Password |
-| `REMOTE_DESKTOP_VNC_HOST` | VNC Host (`host:port`) |
-| `REMOTE_DESKTOP_VNC_PASSWORD` | VNC Password |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `REMOTE_DESKTOP_DISPLAY` | Display number (e.g., `:0`) | `:0` (local), `:99` (rdp) |
+| `REMOTE_DESKTOP_RESOLUTION` | Resolution (e.g., `1280x720`) | `1280x720` |
+| `REMOTE_DESKTOP_RDP_HOST` | RDP Host address | - |
+| `REMOTE_DESKTOP_RDP_USER` | RDP Username | - |
+| `REMOTE_DESKTOP_RDP_PASSWORD` | RDP Password | - |
+| `REMOTE_DESKTOP_VNC_HOST` | VNC Host (`host:port`) | - |
+| `REMOTE_DESKTOP_VNC_PASSWORD` | VNC Password | - |
 
 ## Features
 
