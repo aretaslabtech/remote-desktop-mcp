@@ -38,11 +38,11 @@ app = typer.Typer(
 )
 
 _DEFAULT_TTL: float = 1.5
-# each idle span is collapsed to this many seconds
-_DEFAULT_IDLE_SECONDS: float = 1.0
-_ACTIVE_PRE: float = 0.5   # seconds before a UI action to show at normal speed
-_ACTIVE_POST: float = 1.5  # seconds after  a UI action to show at normal speed
+_DEFAULT_IDLE_SECONDS: float = 0.3   # each idle span → 0.3 s in output
+_ACTIVE_PRE: float = 0.2   # seconds before a UI action shown at normal speed
+_ACTIVE_POST: float = 1.0  # seconds after  a UI action shown at normal speed
 _SPLASH_SECONDS: float = 3.0
+_HUD_H: int = 32           # height of external HUD bar appended below the frame
 
 # Only these action types are considered real UI interactions that pause fast-forward.
 _UI_ACTIONS: frozenset[str] = frozenset({
@@ -137,6 +137,13 @@ def annotate(
             ttl if actions else session_start + 1.0
         )
 
+    # ------------------------------------------------------------------ #
+    # Timing + size stats
+    # ------------------------------------------------------------------ #
+    import time as _time
+    t_start = _time.monotonic()
+    input_size = _total_size(video)
+
     output.parent.mkdir(parents=True, exist_ok=True)
     writer: Any = imageio.get_writer(
         str(output), fps=fps, macro_block_size=None,
@@ -196,7 +203,22 @@ def annotate(
     finally:
         writer.close()
 
-    typer.echo(f'Annotated video saved to: {output}')
+    t_elapsed = _time.monotonic() - t_start
+    output_size = output.stat().st_size if output.exists() else 0
+    typer.echo(
+        f'Annotated video saved to: {output}\n'
+        f'  Input size:  {_fmt_size(input_size)}',
+    )
+    typer.echo(
+        f'  Output size: {_fmt_size(output_size)}'
+        f'  ({output_size / max(input_size, 1) * 100:.1f}% of input)',
+    )
+    typer.echo(
+        f'  Source duration: {_fmt_duration(dur_s)}'
+        f'  →  Output duration: ~{_fmt_duration(_estimate_output_duration(dur_s, active_intervals, idle_seconds))}'
+        f'  +{_fmt_duration(_SPLASH_SECONDS)} splash',
+    )
+    typer.echo(f'  Processing time: {_fmt_duration(t_elapsed)}')
 
 
 # =========================================================================== #
@@ -347,6 +369,9 @@ def _make_splash_frames(
     meta: dict,
 ) -> list[Image.Image]:
     w, h = size
+    # Splash occupies the full canvas including HUD bar height so the video
+    # stream has a consistent resolution from the first frame.
+    full_h = h + _HUD_H
     total = max(1, int(duration * fps))
     font_title = _load_font(28)
     font_body = _load_font(18)
@@ -408,22 +433,24 @@ def _make_splash_frames(
             alpha = 1.0
         alpha = max(0.0, min(1.0, alpha))
 
-        img = Image.new('RGB', (w, h), (12, 15, 25))
+        img = Image.new('RGB', (w, full_h), (12, 15, 25))
         draw = ImageDraw.Draw(img)
 
         # Accent line
         bar_col = (int(80 * alpha), int(160 * alpha), int(255 * alpha))
-        draw.rectangle([(0, h // 3 - 32), (w, h // 3 - 28)], fill=bar_col)
+        draw.rectangle(
+            [(0, full_h // 3 - 32), (w, full_h // 3 - 28)], fill=bar_col,
+        )
         draw.rectangle(
             [
-                (0, h // 3 + len(lines) * 32 + 4),
-                (w, h // 3 + len(lines) * 32 + 8),
+                (0, full_h // 3 + len(lines) * 32 + 4),
+                (w, full_h // 3 + len(lines) * 32 + 8),
             ], fill=bar_col,
         )
 
         line_h = 32
         total_text_h = len(lines) * line_h
-        top = (h - total_text_h) // 2
+        top = (full_h - total_text_h) // 2
 
         for j, (text, font, colour) in enumerate(lines):
             if not text:
@@ -445,26 +472,24 @@ def _make_splash_frames(
 # =========================================================================== #
 
 def _draw_hud(img: Image.Image, elapsed: float, frame_ts: float, speed_label: str) -> Image.Image:
+    """Append a solid black HUD bar *below* the frame (canvas grows downward)."""
     w, h = img.size
-    bar_h = 26
-    bar = Image.new('RGBA', (w, bar_h), (0, 0, 0, 160))
-    rgba = img.convert('RGBA')
-    rgba.paste(bar, (0, h - bar_h), mask=bar)
-    result = rgba.convert('RGB')
-    draw = ImageDraw.Draw(result)
+    canvas = Image.new('RGB', (w, h + _HUD_H), (0, 0, 0))
+    canvas.paste(img, (0, 0))
+    draw = ImageDraw.Draw(canvas)
     font = _load_font(14)
     wall_str = datetime.fromtimestamp(frame_ts).strftime('%H:%M:%S')
     elapsed_str = _fmt_duration(elapsed)
     draw.text(
-        (8, h - bar_h + 5),
-        f'  {elapsed_str}  {wall_str}', fill=(200, 220, 255), font=font,
+        (8, h + (_HUD_H - 14) // 2),
+        f'{elapsed_str}  {wall_str}', fill=(200, 220, 255), font=font,
     )
     if speed_label:
         draw.text(
-            (w - 90, h - bar_h + 5), speed_label,
+            (w - 90, h + (_HUD_H - 14) // 2), speed_label,
             fill=(255, 200, 60), font=font,
         )
-    return result
+    return canvas
 
 
 # =========================================================================== #
@@ -575,6 +600,33 @@ def _crop_even(img: Image.Image) -> Image.Image:
     w, h = img.size
     ew, eh = w - w % 2, h - h % 2
     return img.crop((0, 0, ew, eh)) if (ew, eh) != (w, h) else img
+
+
+def _total_size(path: Path) -> int:
+    """Total bytes of *path* (file) or all mp4s inside (directory)."""
+    if path.is_dir():
+        return sum(f.stat().st_size for f in path.glob('*.mp4') if f.is_file())
+    return path.stat().st_size if path.exists() else 0
+
+
+def _fmt_size(b: int) -> str:
+    for unit in ('B', 'KB', 'MB', 'GB'):
+        if b < 1024:
+            return f'{b:.1f} {unit}'
+        b //= 1024  # type: ignore[assignment]
+    return f'{b:.1f} GB'
+
+
+def _estimate_output_duration(
+    source_duration: float,
+    active_intervals: list[tuple[float, float]],
+    idle_seconds: float,
+) -> float:
+    """Rough estimate of annotated video duration (excluding splash)."""
+    active_s = sum(e - s for s, e in active_intervals)
+    # gaps between + before + after
+    idle_gaps = max(0, len(active_intervals) + 1)
+    return active_s + idle_gaps * idle_seconds
 
 
 def _fmt_duration(seconds: float) -> str:
