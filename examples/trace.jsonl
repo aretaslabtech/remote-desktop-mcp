@@ -1,0 +1,21 @@
+{"type": "session_start", "timestamp": 1773161000.3937395, "fps": 5}
+{"type": "action", "timestamp": 1773161031.2916431, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161046.0341513, "action": "click", "params": {"x": 362, "y": 463, "button": "left"}}
+{"type": "action", "timestamp": 1773161050.5255363, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161062.2933655, "action": "click", "params": {"x": 46, "y": 463, "button": "left"}}
+{"type": "action", "timestamp": 1773161067.0886755, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161077.6172998, "action": "click", "params": {"x": 46, "y": 11, "button": "left"}}
+{"type": "action", "timestamp": 1773161082.616109, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161094.5021842, "action": "click", "params": {"x": 78, "y": 80, "button": "left"}}
+{"type": "action", "timestamp": 1773161099.5220432, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161112.6182656, "action": "click", "params": {"x": 46, "y": 11, "button": "left"}}
+{"type": "action", "timestamp": 1773161118.3485577, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161127.4618034, "action": "click", "params": {"x": 78, "y": 68, "button": "left"}}
+{"type": "action", "timestamp": 1773161132.3035762, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161145.013668, "action": "click", "params": {"x": 840, "y": 267, "button": "left"}}
+{"type": "action", "timestamp": 1773161156.2805545, "action": "type", "params": {"text": "firefox https://www.baidu.com &\n"}}
+{"type": "action", "timestamp": 1773161162.0219314, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "action", "timestamp": 1773161174.992593, "action": "click", "params": {"x": 871, "y": 430, "button": "left"}}
+{"type": "action", "timestamp": 1773161180.840688, "action": "click", "params": {"x": 563, "y": 285, "button": "left"}}
+{"type": "action", "timestamp": 1773161185.974809, "action": "screenshot", "params": {"output_path": "screenshot.png"}}
+{"type": "session_end", "timestamp": 1773161210.7685418}
