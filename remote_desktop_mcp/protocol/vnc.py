@@ -14,6 +14,8 @@ logger = structlog.get_logger()
 
 
 class VNCSession(GUISession):
+    protocol = 'vnc'
+
     host: str
     password: str | None
     client: Optional['VNCDoToolClient']

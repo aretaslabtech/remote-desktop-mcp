@@ -13,6 +13,8 @@ logger = structlog.get_logger()
 
 
 class RDPSession(GUISession):
+    protocol = 'rdp'
+
     host: str
     user: str
     password: str

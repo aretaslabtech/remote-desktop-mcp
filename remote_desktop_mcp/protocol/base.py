@@ -1,6 +1,7 @@
 from abc import ABC
 from abc import abstractmethod
 from enum import Enum
+from typing import ClassVar
 
 
 class MouseButton(Enum):
@@ -22,6 +23,8 @@ class Key(Enum):
 
 
 class GUISession(ABC):
+    protocol: ClassVar[str]
+
     @abstractmethod
     def start(self) -> None:
         """Start the session."""

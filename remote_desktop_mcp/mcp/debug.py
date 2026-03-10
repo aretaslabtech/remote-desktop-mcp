@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from enum import Enum
 from pathlib import Path
@@ -20,27 +21,62 @@ class ActionType(Enum):
 
 
 class DebugLogger:
-    def __init__(self, log_dir: str = 'debug_logs') -> None:
+    def __init__(self, protocol: str = 'unknown', log_dir: str = '.logs') -> None:
         self.log_root = Path(log_dir)
-        self.session_id = time.strftime('%Y%m%d_%H%M%S')
-        self.session_dir = self.log_root / self.session_id
+        self.sessions_dir = self.log_root / 'sessions'
+
+        # Session name: 20231027_103005_local
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        self.session_id = f"{timestamp}_{protocol}"
+        self.session_dir = self.sessions_dir / self.session_id
+
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.step_count = 0
-        logger.info(
-            'debug_logger_initialized',
-            session_dir=str(self.session_dir),
-        )
 
-    def _get_next_step_dir(self, action_type: ActionType) -> Path:
+        self._update_latest_link()
+        logger.info('debug_logger_ready', session_dir=str(self.session_dir))
+
+    def _update_latest_link(self):
+        """Create a 'latest' symlink pointing to the current session."""
+        latest_link = self.log_root / 'latest'
+        try:
+            if latest_link.exists() or latest_link.is_symlink():
+                latest_link.unlink()
+            # Use relative path for the symlink to be portable
+            rel_path = os.path.relpath(self.session_dir, self.log_root)
+            os.symlink(rel_path, latest_link)
+        except Exception:
+            # Fallback for systems that don't support symlinks (like some Windows configs)
+            pass
+
+    def _get_step_name(self, action_type: ActionType, params: dict) -> str:
+        """Create a descriptive folder name for the step."""
         self.step_count += 1
-        step_name = f"step_{self.step_count:03d}_{action_type.value}"
+        base = f"{self.step_count:03d}_{action_type.value}"
+
+        if action_type == ActionType.CLICK:
+            suffix = f"_x{params.get('x')}_y{params.get('y')}_{params.get('button')}"
+        elif action_type == ActionType.MOVE:
+            suffix = f"_x{params.get('x')}_y{params.get('y')}"
+        elif action_type == ActionType.TYPE:
+            text = str(params.get('text', ''))[:15].replace(' ', '_')
+            suffix = f"_{text}"
+        elif action_type == ActionType.KEY:
+            suffix = f"_{params.get('key')}"
+        elif action_type == ActionType.SCROLL:
+            suffix = f"_{params.get('clicks')}"
+        else:
+            suffix = ''
+
+        # Clean suffix from invalid filename chars
+        suffix = ''.join([c for c in suffix if c.isalnum() or c in '_-'])
+        return f"{base}{suffix}"
+
+    def log_step(self, action_type: ActionType, params: dict, session):
+        """Log a single step with screenshots and metadata."""
+        step_name = self._get_step_name(action_type, params)
         step_dir = self.session_dir / step_name
         step_dir.mkdir(parents=True, exist_ok=True)
-        return step_dir
-
-    def log_step(self, action_type: ActionType, params: dict, session, before: bool = True):
-        """Log a single step with screenshots and metadata."""
-        step_dir = self._get_next_step_dir(action_type)
 
         # 1. Metadata
         metadata = {
@@ -49,64 +85,87 @@ class DebugLogger:
             'params': params,
             'step': self.step_count,
         }
-        with open(step_dir / 'metadata.json', 'w') as f:
+        with open(step_dir / 'meta.json', 'w') as f:
             json.dump(metadata, f, indent=2)
 
         # 2. Before screenshot
         before_path = step_dir / 'before.png'
-        session.take_screenshot(str(before_path))
+        try:
+            session.take_screenshot(str(before_path))
+        except Exception as e:
+            logger.error('debug_screenshot_failed', error=str(e))
 
-        # 3. If it's a click, mark the location on a copy of the 'before' image
+        # 3. Mark action
         if action_type == ActionType.CLICK and 'x' in params and 'y' in params:
             self._mark_click(
                 before_path, params['x'], params['y'], params.get(
                     'button', 'left',
-                ), step_dir / 'action_marked.png',
+                ), step_dir / 'marked.png',
+            )
+        elif action_type == ActionType.MOVE and 'x' in params and 'y' in params:
+            self._mark_move(
+                before_path, params['x'], params['y'], step_dir / 'marked.png',
             )
 
         return step_dir
 
     def log_after(self, step_dir: Path, session):
-        """Take an 'after' screenshot for a step."""
+        """Take an 'after' screenshot."""
         after_path = step_dir / 'after.png'
-        session.take_screenshot(str(after_path))
+        try:
+            session.take_screenshot(str(after_path))
+        except Exception:
+            pass
 
     def _mark_click(self, img_path: Path, x: int, y: int, button: str, output_path: Path):
         try:
+            if not img_path.exists():
+                return
             with Image.open(img_path) as img:
                 draw = ImageDraw.Draw(img)
                 color = 'red' if button == 'left' else 'blue' if button == 'right' else 'green'
-                radius = 10
-                # Draw a circle at the click location
+                r = 15
+                # Outer circle
                 draw.ellipse(
-                    (
-                        x - radius, y - radius, x + radius,
-                        y + radius,
-                    ), outline=color, width=3,
+                    (x - r, y - r, x + r, y + r),
+                    outline=color, width=4,
                 )
-                # Draw a crosshair
+                # Inner dot
+                draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=color)
+                # Crosshair
                 draw.line(
-                    (x - radius * 2, y, x + radius * 2, y),
+                    (x - int(r * 1.5), y, x + int(r * 1.5), y),
                     fill=color, width=2,
                 )
                 draw.line(
-                    (x, y - radius * 2, x, y + radius * 2),
+                    (x, y - int(r * 1.5), x, y + int(r * 1.5)),
                     fill=color, width=2,
                 )
                 img.save(output_path)
-        except Exception as e:
-            logger.error(
-                'failed_to_mark_click',
-                error=str(e), path=str(img_path),
-            )
+        except Exception:
+            pass
+
+    def _mark_move(self, img_path: Path, x: int, y: int, output_path: Path):
+        try:
+            if not img_path.exists():
+                return
+            with Image.open(img_path) as img:
+                draw = ImageDraw.Draw(img)
+                color = 'yellow'
+                r = 10
+                # Just a crosshair for move
+                draw.line((x - r, y, x + r, y), fill=color, width=2)
+                draw.line((x, y - r, x, y + r), fill=color, width=2)
+                img.save(output_path)
+        except Exception:
+            pass
 
 
-# Global debug logger instance (lazy initialization)
-_debug_logger: DebugLogger | None = None
+# Singleton logic with protocol support
+_debug_loggers: dict[str, DebugLogger] = {}
 
 
-def get_debug_logger() -> DebugLogger:
-    global _debug_logger
-    if _debug_logger is None:
-        _debug_logger = DebugLogger()
-    return _debug_logger
+def get_debug_logger(protocol: str = 'unknown') -> DebugLogger:
+    if protocol not in _debug_loggers:
+        _debug_loggers[protocol] = DebugLogger(protocol=protocol)
+    return _debug_loggers[protocol]

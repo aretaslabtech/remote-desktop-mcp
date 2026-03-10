@@ -5,6 +5,8 @@ from typing import cast
 import structlog
 import typer
 
+from ..mcp.debug import ActionType
+from ..mcp.debug import get_debug_logger
 from ..protocol.base import MouseButton
 from ..protocol.local import LocalSession
 from ..protocol.rdp import RDPSession
@@ -36,8 +38,18 @@ def debug_local_screenshot(
 ):
     session = LocalSession(display_num=display)
     session.start()
+
+    debug = get_debug_logger('local')
+    step_dir = debug.log_step(
+        ActionType.SCREENSHOT, {
+            'output': output,
+        }, session,
+    )
+
     session.take_screenshot(output)
-    print(f"Screenshot saved to {output}")
+
+    debug.log_after(step_dir, session)
+    print(f"Screenshot saved to {output} (Debug info in {step_dir})")
     session.stop()
 
 
@@ -52,7 +64,16 @@ def debug_local_click(
 ):
     session = LocalSession(display_num=display)
     session.start()
+
+    debug = get_debug_logger('local')
+    step_dir = debug.log_step(
+        ActionType.CLICK, {'x': x, 'y': y, 'button': button.value}, session,
+    )
+
     session.click(x, y, button)
+
+    debug.log_after(step_dir, session)
+    print(f"Clicked {button.value} at ({x}, {y}) (Debug info in {step_dir})")
     session.stop()
 
 
@@ -78,8 +99,18 @@ def debug_vnc_screenshot(
 ):
     session = VNCSession(host=host, password=password)
     session.start()
+
+    debug = get_debug_logger('vnc')
+    step_dir = debug.log_step(
+        ActionType.SCREENSHOT, {
+            'host': host, 'output': output,
+        }, session,
+    )
+
     session.take_screenshot(output)
-    print(f"Screenshot saved to {output}")
+
+    debug.log_after(step_dir, session)
+    print(f"Screenshot saved to {output} (Debug info in {step_dir})")
     session.stop()
 
 
@@ -120,8 +151,18 @@ def debug_rdp_screenshot(
         display_num=display, resolution=resolution,
     )
     session.start()
+
+    debug = get_debug_logger('rdp')
+    step_dir = debug.log_step(
+        ActionType.SCREENSHOT, {
+            'host': host, 'output': output,
+        }, session,
+    )
+
     session.take_screenshot(output)
-    print(f"Screenshot saved to {output}")
+
+    debug.log_after(step_dir, session)
+    print(f"Screenshot saved to {output} (Debug info in {step_dir})")
     session.stop()
 
 

@@ -25,7 +25,7 @@ def take_screenshot(output_path: str = 'screenshot.png') -> str:
         return 'Error: No session active.'
 
     # Debug logging
-    debug = get_debug_logger()
+    debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(
         ActionType.SCREENSHOT, {
             'output_path': output_path,
@@ -35,7 +35,7 @@ def take_screenshot(output_path: str = 'screenshot.png') -> str:
     _session.take_screenshot(output_path)
 
     debug.log_after(step_dir, _session)
-    return f"Screenshot saved to {output_path} (Debug info in {step_dir})"
+    return f"Screenshot saved to {output_path} (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -49,7 +49,7 @@ def mouse_click(x: int, y: int, button: str = 'left') -> str:
         return f"Error: Invalid button '{button}'. Use 'left', 'middle', or 'right'."
 
     # Debug logging
-    debug = get_debug_logger()
+    debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(
         ActionType.CLICK, {'x': x, 'y': y, 'button': button}, _session,
     )
@@ -57,7 +57,7 @@ def mouse_click(x: int, y: int, button: str = 'left') -> str:
     _session.click(x, y, btn)
 
     debug.log_after(step_dir, _session)
-    return f"Clicked {button} at ({x}, {y}) (Debug info in {step_dir})"
+    return f"Clicked {button} at ({x}, {y}) (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -67,13 +67,13 @@ def mouse_move(x: int, y: int) -> str:
         return 'Error: No session active.'
 
     # Debug logging
-    debug = get_debug_logger()
+    debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(ActionType.MOVE, {'x': x, 'y': y}, _session)
 
     _session.move(x, y)
 
     debug.log_after(step_dir, _session)
-    return f"Moved mouse to ({x}, {y}) (Debug info in {step_dir})"
+    return f"Moved mouse to ({x}, {y}) (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -83,13 +83,13 @@ def mouse_scroll(clicks: int) -> str:
         return 'Error: No session active.'
 
     # Debug logging
-    debug = get_debug_logger()
+    debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(ActionType.SCROLL, {'clicks': clicks}, _session)
 
     _session.scroll(clicks)
 
     debug.log_after(step_dir, _session)
-    return f"Scrolled {clicks} clicks (Debug info in {step_dir})"
+    return f"Scrolled {clicks} clicks (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -99,13 +99,13 @@ def type_text(text: str) -> str:
         return 'Error: No session active.'
 
     # Debug logging
-    debug = get_debug_logger()
+    debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(ActionType.TYPE, {'text': text}, _session)
 
     _session.type_text(text)
 
     debug.log_after(step_dir, _session)
-    return f"Typed: {text} (Debug info in {step_dir})"
+    return f"Typed: {text} (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -120,10 +120,10 @@ def press_key(key_name: str) -> str:
         return f"Error: Invalid key '{key_name}'. Valid keys: {valid_keys}"
 
     # Debug logging
-    debug = get_debug_logger()
+    debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(ActionType.KEY, {'key': key_name}, _session)
 
     _session.key_event(key)
 
     debug.log_after(step_dir, _session)
-    return f"Pressed key: {key_name} (Debug info in {step_dir})"
+    return f"Pressed key: {key_name} (Debug: {step_dir})"

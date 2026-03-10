@@ -11,6 +11,8 @@ logger = structlog.get_logger()
 
 
 class LocalSession(GUISession):
+    protocol = 'local'
+
     display_num: str | None
 
     def __init__(self, display_num: str | None = None) -> None:
