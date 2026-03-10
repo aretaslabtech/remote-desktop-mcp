@@ -70,6 +70,7 @@ class ADBSession(GUISession):
         cmd = self.adb_base + args
         return subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=capture_output,
             check=True,
             text=True if capture_output else False,
@@ -100,6 +101,7 @@ class ADBSession(GUISession):
         with open(output_path, 'wb') as f:
             subprocess.run(
                 self.adb_base + ['exec-out', 'screencap', '-p'],
+                stdin=subprocess.DEVNULL,
                 stdout=f,
                 check=True,
             )
