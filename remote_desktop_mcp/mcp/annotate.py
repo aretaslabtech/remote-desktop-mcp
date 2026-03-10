@@ -1,25 +1,28 @@
 """Post-process a raw screen recording with action annotations from a trace file.
 
-Reads the raw MP4 output of :class:`~remote_desktop_mcp.mcp.recorder.ScreenRecorder`
-and the JSONL trace produced by :class:`~remote_desktop_mcp.mcp.trace.TraceLogger`,
-then renders a new annotated video where each agent action is highlighted:
-
-- **Left click**:  red  shrinking ripple circle + crosshair
-- **Right click**: blue shrinking ripple circle + crosshair
-- **Mouse move**:  yellow crosshair at the destination
-- **Scroll**:      purple directional arrow in the frame centre
-- **Type / key**:  semi-transparent bottom banner with the text
+Features
+--------
+* Accepts a single segment file **or** a segment directory produced by the
+  segmented recorder (``recording_0000.mp4``, ``recording_0001.mp4``, …).
+* **Idle acceleration**: stretches with no agent activity are played at
+  ``--idle-speed`` × normal speed (default 8×) to keep the video concise.
+* **Metadata splash**: a 3-second intro card shows session details.
+* **HUD overlay**: elapsed time and a speedup badge are drawn on every frame.
+* Action annotations: click ripples, move crosshairs, scroll arrows, text
+  banners (same as before).
 
 Usage::
 
     remote-desktop-mcp annotate \\
-        --video  .logs/sessions/20260310_233748_rdp/recording.mp4 \\
+        --video  .logs/sessions/20260310_233748_rdp/ \\
         --trace  .logs/sessions/20260310_233748_rdp/trace.jsonl \\
         --output annotated.mp4
 """
 from __future__ import annotations
 
+import bisect
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 from typing import Any
@@ -34,15 +37,28 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-# How long (seconds) each annotation is visible in the output video.
 _DEFAULT_TTL: float = 1.5
+# each idle span is collapsed to this many seconds
+_DEFAULT_IDLE_SECONDS: float = 1.0
+_ACTIVE_PRE: float = 0.5   # seconds before a UI action to show at normal speed
+_ACTIVE_POST: float = 1.5  # seconds after  a UI action to show at normal speed
+_SPLASH_SECONDS: float = 3.0
 
+# Only these action types are considered real UI interactions that pause fast-forward.
+_UI_ACTIONS: frozenset[str] = frozenset({
+    'click', 'type', 'key', 'hotkey', 'scroll', 'move',
+})
+
+
+# =========================================================================== #
+# CLI entry point
+# =========================================================================== #
 
 @app.command()
 def annotate(
     video: Annotated[
         Path,
-        typer.Option(help='Raw recording MP4 (or GIF) path.'),
+        typer.Option(help='Raw recording file or segment directory.'),
     ],
     trace: Annotated[
         Path,
@@ -54,47 +70,23 @@ def annotate(
     ] = Path('annotated.mp4'),
     ttl: Annotated[
         float,
-        typer.Option(help='Seconds each annotation remains visible.'),
+        typer.Option(help='Seconds each annotation stays visible.'),
     ] = _DEFAULT_TTL,
+    idle_seconds: Annotated[
+        float,
+        typer.Option(
+            help='Each idle gap between actions is collapsed to this many seconds in the output.',
+        ),
+    ] = _DEFAULT_IDLE_SECONDS,
 ) -> None:
     """Combine a raw screen recording with a JSONL trace to produce an annotated video."""
     if not video.exists():
-        typer.echo(f"Error: video file not found: {video}", err=True)
+        typer.echo(f'Error: video path not found: {video}', err=True)
         raise typer.Exit(1)
     if not trace.exists():
-        typer.echo(f"Error: trace file not found: {trace}", err=True)
+        typer.echo(f'Error: trace file not found: {trace}', err=True)
         raise typer.Exit(1)
 
-    # ------------------------------------------------------------------ #
-    # Load trace
-    # ------------------------------------------------------------------ #
-    session_start_time, fps_from_trace, actions = _load_trace(trace)
-
-    # ------------------------------------------------------------------ #
-    # Load video metadata sidecar (preferred) or fall back to trace fps
-    # ------------------------------------------------------------------ #
-    meta_path = video.with_suffix('.meta.json')
-    if meta_path.exists():
-        meta = json.loads(meta_path.read_text(encoding='utf-8'))
-        video_start_time: float = meta.get('start_time', session_start_time)
-        fps: int = int(meta.get('fps', fps_from_trace))
-    else:
-        typer.echo(
-            f"Warning: sidecar '{meta_path.name}' not found; "
-            'using session_start timestamp from trace.',
-            err=True,
-        )
-        video_start_time = session_start_time
-        fps = fps_from_trace
-
-    typer.echo(
-        f"video_start={video_start_time:.3f}  fps={fps}  "
-        f"actions={len(actions)}  ttl={ttl}s",
-    )
-
-    # ------------------------------------------------------------------ #
-    # Read + annotate frames
-    # ------------------------------------------------------------------ #
     try:
         import imageio  # type: ignore[import-untyped]
         import numpy as np
@@ -106,55 +98,141 @@ def annotate(
         )
         raise typer.Exit(1)
 
-    reader: Any = imageio.get_reader(str(video))
+    session_start, session_end, fps_hint, actions, session_meta = _load_trace(
+        trace,
+    )
+    segments = _collect_segments(video, fps_hint)
+    if not segments:
+        typer.echo('Error: no video segments found.', err=True)
+        raise typer.Exit(1)
+
+    fps = segments[0][1].get('fps', fps_hint)
+    total_segments = len(segments)
+    typer.echo(
+        f'segments={total_segments}  fps={fps}  '
+        f'actions={len(actions)}  idle_seconds={idle_seconds}s',
+    )
+
+    active_intervals = _build_active_intervals(
+        [a for a in actions if a.get('action') in _UI_ACTIONS],
+        _ACTIVE_PRE, _ACTIVE_POST + ttl,
+    )
+
+    first_reader: Any = imageio.get_reader(str(segments[0][0]))
+    first_frame = next(iter(first_reader))
+    first_reader.close()
+    import numpy as np  # noqa: F811
+    fh, fw = np.asarray(first_frame).shape[:2]
+    fw = fw - fw % 2
+    fh = fh - fh % 2
+    frame_size = (fw, fh)
+
+    dur_s = (session_end - session_start) if session_end else \
+            (actions[-1]['timestamp'] - session_start if actions else 0.0)
+
+    # Upper bound for the last idle span (after final active window)
+    wall_end = session_end or \
+        (
+            actions[-1]['timestamp'] + _ACTIVE_POST +
+            ttl if actions else session_start + 1.0
+        )
+
     output.parent.mkdir(parents=True, exist_ok=True)
     writer: Any = imageio.get_writer(
         str(output), fps=fps, macro_block_size=None,
     )
 
     try:
-        for frame_idx, frame_array in enumerate(reader):
-            frame_ts = video_start_time + frame_idx / fps
-            active = [
-                (a, frame_ts - a['timestamp'])
-                for a in actions
-                if 0.0 <= frame_ts - a['timestamp'] <= ttl
-            ]
+        splash_meta = {
+            **session_meta,
+            'segments': total_segments,
+            'actions': len(actions),
+            'idle_seconds': idle_seconds,
+            'duration': dur_s,
+            'fps': fps,
+        }
+        for splash_img in _make_splash_frames(frame_size, fps, _SPLASH_SECONDS, splash_meta):
+            splash_img = _crop_even(splash_img)
+            writer.append_data(np.asarray(splash_img))
 
-            img = Image.fromarray(frame_array).convert('RGB')
+        for seg_idx, (seg_path, seg_meta) in enumerate(segments):
+            seg_start: float = seg_meta.get('start_time', session_start)
+            typer.echo(
+                f'  segment {seg_idx + 1}/{total_segments}: {seg_path.name}',
+            )
+            reader: Any = imageio.get_reader(str(seg_path))
 
-            if active:
-                img = _render_annotations(img, active, ttl)
+            for frame_idx, frame_array in enumerate(reader):
+                frame_ts = seg_start + frame_idx / fps
+                elapsed = frame_ts - session_start
+                is_active = _in_active_window(frame_ts, active_intervals)
 
-            w, h = img.size
-            ew, eh = w - w % 2, h - h % 2
-            if (ew, eh) != (w, h):
-                img = img.crop((0, 0, ew, eh))
+                speed_label = ''
+                if not is_active:
+                    include, speed_label = _idle_frame_decision(
+                        frame_ts, active_intervals, session_start, wall_end, fps, idle_seconds,
+                    )
+                    if not include:
+                        continue
 
-            writer.append_data(np.asarray(img))
+                active_anns = [
+                    (a, frame_ts - a['timestamp'])
+                    for a in actions
+                    if 0.0 <= frame_ts - a['timestamp'] <= ttl
+                ]
+
+                img = Image.fromarray(np.asarray(frame_array)).convert('RGB')
+                if img.size != frame_size:
+                    img = img.resize(frame_size, Image.Resampling.LANCZOS)
+
+                if active_anns:
+                    img = _render_annotations(img, active_anns, ttl)
+
+                img = _draw_hud(img, elapsed, frame_ts, speed_label)
+                img = _crop_even(img)
+                writer.append_data(np.asarray(img))
+
+            reader.close()
     finally:
-        reader.close()
         writer.close()
 
-    typer.echo(f"Annotated video saved to: {output}")
+    typer.echo(f'Annotated video saved to: {output}')
 
 
-# --------------------------------------------------------------------------- #
+# =========================================================================== #
+# Segment collection
+# =========================================================================== #
+
+def _collect_segments(video: Path, fallback_fps: int) -> list[tuple[Path, dict]]:
+    if video.is_dir():
+        files = sorted(video.glob('*_????.mp4')) or sorted(video.glob('*.mp4'))
+    else:
+        files = [video]
+
+    result = []
+    for f in files:
+        meta_path = f.with_suffix('.meta.json')
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding='utf-8'))
+            except Exception:
+                meta = {'fps': fallback_fps}
+        else:
+            meta = {'fps': fallback_fps}
+        result.append((f, meta))
+    return result
+
+
+# =========================================================================== #
 # Trace loading
-# --------------------------------------------------------------------------- #
+# =========================================================================== #
 
-def _load_trace(
-    path: Path,
-) -> tuple[float, int, list[dict]]:
-    """Parse a JSONL trace file.
-
-    Returns
-    -------
-    (session_start_timestamp, fps, list_of_action_records)
-    """
-    session_start_time: float = 0.0
+def _load_trace(path: Path) -> tuple[float, float | None, int, list[dict], dict]:
+    session_start: float = 0.0
+    session_end: float | None = None
     fps: int = 5
     actions: list[dict] = []
+    meta: dict = {}
 
     with open(path, encoding='utf-8') as fh:
         for line in fh:
@@ -165,35 +243,244 @@ def _load_trace(
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if rec.get('type') == 'session_start':
-                session_start_time = float(rec.get('timestamp', 0.0))
+            t = rec.get('type')
+            if t == 'session_start':
+                session_start = float(rec.get('timestamp', 0.0))
                 fps = int(rec.get('fps', 5))
-            elif rec.get('type') == 'action':
+                meta = {k: v for k, v in rec.items() if k not in ('type', 'fps')}
+            elif t == 'action':
                 actions.append(rec)
+            elif t == 'session_end':
+                session_end = float(rec.get('timestamp', 0.0))
 
-    return session_start_time, fps, actions
+    return session_start, session_end, fps, actions, meta
 
 
-# --------------------------------------------------------------------------- #
+# =========================================================================== #
+# Active-window helpers
+# =========================================================================== #
+
+def _build_active_intervals(actions: list[dict], pre: float, post: float) -> list[tuple[float, float]]:
+    if not actions:
+        return []
+    intervals = sorted(
+        (a['timestamp'] - pre, a['timestamp'] + post)
+        for a in actions
+    )
+    merged: list[tuple[float, float]] = [intervals[0]]
+    for start, end in intervals[1:]:
+        ps, pe = merged[-1]
+        if start <= pe:
+            merged[-1] = (ps, max(pe, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _in_active_window(ts: float, intervals: list[tuple[float, float]]) -> bool:
+    if not intervals:
+        return False
+    starts = [s for s, _ in intervals]
+    idx = bisect.bisect_right(starts, ts) - 1
+    return idx >= 0 and intervals[idx][0] <= ts <= intervals[idx][1]
+
+
+def _find_idle_span(
+    ts: float,
+    intervals: list[tuple[float, float]],
+    session_start: float,
+    session_end: float,
+) -> tuple[float, float]:
+    """Return the idle (start, end) span that contains *ts*.
+
+    Assumes *ts* is not inside any active interval.
+    """
+    if not intervals:
+        return (session_start, session_end)
+    starts = [s for s, _ in intervals]
+    idx = bisect.bisect_right(starts, ts) - 1
+    if idx < 0:
+        return (session_start, intervals[0][0])
+    if ts > intervals[-1][1]:
+        return (intervals[-1][1], session_end)
+    # between intervals[idx] and intervals[idx+1]
+    return (intervals[idx][1], intervals[idx + 1][0])
+
+
+def _idle_frame_decision(
+    ts: float,
+    intervals: list[tuple[float, float]],
+    session_start: float,
+    session_end: float,
+    fps: int,
+    idle_seconds: float,
+) -> tuple[bool, str]:
+    """Decide whether to include an idle frame and compute its HUD speed label.
+
+    Each idle span is collapsed to *idle_seconds* in the output regardless of
+    its actual duration, so the effective speedup varies per span.
+    """
+    span_start, span_end = _find_idle_span(
+        ts, intervals, session_start, session_end,
+    )
+    span_duration = max(span_end - span_start, 1.0 / fps)
+    span_frames = max(1, round(span_duration * fps))
+    target_frames = max(1, round(idle_seconds * fps))
+    step = max(1, round(span_frames / target_frames))
+
+    frame_offset = round((ts - span_start) * fps)
+    include = (frame_offset % step == 0)
+
+    speedup = span_duration / max(idle_seconds, 1.0 / fps)
+    speed_label = f'\u23e9 {speedup:.0f}\u00d7' if speedup >= 1.5 else ''
+    return include, speed_label
+
+
+# =========================================================================== #
+# Splash screen
+# =========================================================================== #
+
+def _make_splash_frames(
+    size: tuple[int, int],
+    fps: int,
+    duration: float,
+    meta: dict,
+) -> list[Image.Image]:
+    w, h = size
+    total = max(1, int(duration * fps))
+    font_title = _load_font(28)
+    font_body = _load_font(18)
+    font_small = _load_font(14)
+
+    start_ts = meta.get('timestamp', 0.0)
+    start_str = datetime.fromtimestamp(start_ts).strftime(
+        '%Y-%m-%d %H:%M:%S',
+    ) if start_ts else 'unknown'
+    dur_str = _fmt_duration(meta.get('duration', 0.0))
+
+    lines: list[tuple[str, Any, tuple[int, int, int]]] = [
+        (
+            'Remote Desktop MCP',
+            font_title, (120, 220, 255),
+        ),
+        (
+            'Session Recording',
+            font_body, (180, 180, 220),
+        ),
+        (
+            '',
+            font_body, (255, 255, 255),
+        ),
+        (
+            f"Start:      {start_str}",
+            font_body, (220, 220, 220),
+        ),
+        (
+            f"Duration:   {dur_str}",
+            font_body, (220, 220, 220),
+        ),
+        (
+            f"FPS:        {meta.get('fps', '?')}",
+            font_body, (220, 220, 220),
+        ),
+        (
+            f"Segments:   {meta.get('segments', '?')}",
+            font_body, (220, 220, 220),
+        ),
+        (
+            f"Actions:    {meta.get('actions', '?')}",
+            font_body, (220, 220, 220),
+        ),
+        (
+            f"Idle span:  {meta.get('idle_seconds', '?')}s \u2192 1s each",
+            font_small, (160, 200, 160),
+        ),
+    ]
+
+    frames: list[Image.Image] = []
+    for i in range(total):
+        t = i / fps
+        if t < 0.5:
+            alpha = t / 0.5
+        elif t > duration - 0.5:
+            alpha = (duration - t) / 0.5
+        else:
+            alpha = 1.0
+        alpha = max(0.0, min(1.0, alpha))
+
+        img = Image.new('RGB', (w, h), (12, 15, 25))
+        draw = ImageDraw.Draw(img)
+
+        # Accent line
+        bar_col = (int(80 * alpha), int(160 * alpha), int(255 * alpha))
+        draw.rectangle([(0, h // 3 - 32), (w, h // 3 - 28)], fill=bar_col)
+        draw.rectangle(
+            [
+                (0, h // 3 + len(lines) * 32 + 4),
+                (w, h // 3 + len(lines) * 32 + 8),
+            ], fill=bar_col,
+        )
+
+        line_h = 32
+        total_text_h = len(lines) * line_h
+        top = (h - total_text_h) // 2
+
+        for j, (text, font, colour) in enumerate(lines):
+            if not text:
+                continue
+            r, g, b = colour
+            fa = int(alpha * 255)
+            draw.text(
+                (w // 2, top + j * line_h), text,
+                fill=(r, g, b, fa), font=font, anchor='mm',
+            )
+
+        frames.append(img)
+
+    return frames
+
+
+# =========================================================================== #
+# HUD overlay
+# =========================================================================== #
+
+def _draw_hud(img: Image.Image, elapsed: float, frame_ts: float, speed_label: str) -> Image.Image:
+    w, h = img.size
+    bar_h = 26
+    bar = Image.new('RGBA', (w, bar_h), (0, 0, 0, 160))
+    rgba = img.convert('RGBA')
+    rgba.paste(bar, (0, h - bar_h), mask=bar)
+    result = rgba.convert('RGB')
+    draw = ImageDraw.Draw(result)
+    font = _load_font(14)
+    wall_str = datetime.fromtimestamp(frame_ts).strftime('%H:%M:%S')
+    elapsed_str = _fmt_duration(elapsed)
+    draw.text(
+        (8, h - bar_h + 5),
+        f'  {elapsed_str}  {wall_str}', fill=(200, 220, 255), font=font,
+    )
+    if speed_label:
+        draw.text(
+            (w - 90, h - bar_h + 5), speed_label,
+            fill=(255, 200, 60), font=font,
+        )
+    return result
+
+
+# =========================================================================== #
 # Annotation rendering
-# --------------------------------------------------------------------------- #
+# =========================================================================== #
 
-def _render_annotations(
-    img: Image.Image,
-    active: list[tuple[dict, float]],   # (action_record, elapsed_seconds)
-    ttl: float,
-) -> Image.Image:
-    """Draw all active annotations onto *img* and return the result."""
+def _render_annotations(img: Image.Image, active: list[tuple[dict, float]], ttl: float) -> Image.Image:
     rgba = img.convert('RGBA')
     overlay = Image.new('RGBA', rgba.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
 
     for rec, elapsed in active:
-        alpha_f = max(0.0, 1.0 - elapsed / ttl)   # 1.0 = fresh, 0.0 = expired
+        alpha_f = max(0.0, 1.0 - elapsed / ttl)
         alpha = int(alpha_f * 255)
         action = rec.get('action', '')
         params = rec.get('params', {})
-
         if action == 'click':
             _draw_click(draw, params, alpha, alpha_f)
         elif action == 'move':
@@ -207,28 +494,17 @@ def _render_annotations(
         alpha_f = max(0.0, 1.0 - elapsed / ttl)
         action = rec.get('action', '')
         params = rec.get('params', {})
-        if action in ('type', 'key'):
+        if action in ('type', 'key', 'hotkey'):
             img = _draw_text_banner(img, action, params, alpha_f)
 
     return img
 
 
-def _draw_click(
-    draw: ImageDraw.ImageDraw,
-    params: dict,
-    alpha: int,
-    alpha_f: float,
-) -> None:
+def _draw_click(draw: ImageDraw.ImageDraw, params: dict, alpha: int, alpha_f: float) -> None:
     x, y = params.get('x', 0), params.get('y', 0)
     button = params.get('button', 'left')
-    if button == 'right':
-        color = (50, 50, 255, alpha)
-    elif button == 'middle':
-        color = (50, 220, 50, alpha)
-    else:
-        color = (255, 50, 50, alpha)
-
-    # Radius shrinks as the annotation ages (fresh = large, fading = small)
+    color = (255, 50, 50, alpha) if button == 'left' else \
+            (50, 50, 255, alpha) if button == 'right' else (50, 220, 50, alpha)
     r = max(6, int(36 * alpha_f))
     draw.ellipse((x - r, y - r, x + r, y + r), outline=color, width=3)
     draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=color)
@@ -248,14 +524,8 @@ def _draw_move(draw: ImageDraw.ImageDraw, params: dict, alpha: int) -> None:
     draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=c)
 
 
-def _draw_scroll(
-    draw: ImageDraw.ImageDraw,
-    size: tuple[int, int],
-    params: dict,
-    alpha: int,
-) -> None:
+def _draw_scroll(draw: ImageDraw.ImageDraw, size: tuple[int, int], params: dict, alpha: int) -> None:
     w, h = size
-    # Compact arrow in the top-right corner to avoid covering content
     cx, cy = w - 60, 60
     clicks = params.get('clicks', 0)
     c = (220, 100, 255, alpha)
@@ -267,34 +537,26 @@ def _draw_scroll(
         draw.rectangle([cx - 4, cy - 14, cx + 4, cy], fill=c)
 
 
-def _draw_text_banner(
-    img: Image.Image,
-    action: str,
-    params: dict,
-    alpha_f: float,
-) -> Image.Image:
+def _draw_text_banner(img: Image.Image, action: str, params: dict, alpha_f: float) -> Image.Image:
     w, h = img.size
     banner_h = 42
-
     if action == 'type':
         text = f'\u2328  Typing:  {repr(params.get("text", ""))}'
-        bg = (0, 50, 0)
-        fg = (80, 255, 80)
+        bg, fg = (0, 50, 0), (80, 255, 80)
     elif action == 'key':
         text = f'\u2328  Key:  [ {params.get("key", "").upper()} ]'
-        bg = (0, 35, 55)
-        fg = (80, 220, 255)
+        bg, fg = (0, 35, 55), (80, 220, 255)
+    elif action == 'hotkey':
+        text = f'\u2328  Hotkey:  [ {params.get("keys", "").upper()} ]'
+        bg, fg = (40, 20, 55), (200, 150, 255)
     else:
         return img
-
     if len(text) > 90:
         text = text[:87] + '...'
-
     a = int(alpha_f * 200)
     banner = Image.new('RGBA', (w, banner_h), (*bg, a))
     img_rgba = img.convert('RGBA')
     img_rgba.paste(banner, (0, h - banner_h), mask=banner)
-
     result = img_rgba.convert('RGB')
     draw = ImageDraw.Draw(result)
     font = _load_font(16)
@@ -305,13 +567,32 @@ def _draw_text_banner(
     return result
 
 
-# --------------------------------------------------------------------------- #
+# =========================================================================== #
+# Utilities
+# =========================================================================== #
+
+def _crop_even(img: Image.Image) -> Image.Image:
+    w, h = img.size
+    ew, eh = w - w % 2, h - h % 2
+    return img.crop((0, 0, ew, eh)) if (ew, eh) != (w, h) else img
+
+
+def _fmt_duration(seconds: float) -> str:
+    seconds = max(0.0, seconds)
+    hh = int(seconds // 3600)
+    mm = int((seconds % 3600) // 60)
+    ss = seconds % 60
+    if hh:
+        return f'{hh}:{mm:02d}:{ss:05.2f}'
+    return f'{mm:02d}:{ss:05.2f}'
+
 
 def _load_font(size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
     candidates = [
         '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
         '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
         '/System/Library/Fonts/Helvetica.ttc',
+        '/System/Library/Fonts/SFNSDisplay.ttf',
         'C:/Windows/Fonts/arial.ttf',
     ]
     for path in candidates:
