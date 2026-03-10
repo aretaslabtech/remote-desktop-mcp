@@ -7,6 +7,8 @@ import typer
 
 from ..mcp.debug import ActionType
 from ..mcp.debug import get_debug_logger
+from ..mcp.recorder import ScreenRecorder
+from ..mcp.trace import TraceLogger
 from ..protocol.base import MouseButton
 from ..protocol.local import LocalSession
 from ..protocol.rdp import RDPSession
@@ -40,17 +42,28 @@ def debug_local_screenshot(
     session.start()
 
     debug = get_debug_logger('local')
+    recorder = ScreenRecorder()
+    recorder.start(
+        session, output_path=str(
+            debug.session_dir / 'recording.mp4',
+        ),
+    )
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
     step_dir = debug.log_step(
         ActionType.SCREENSHOT, {
             'output': output,
         }, session,
     )
-
     session.take_screenshot(output)
-
+    tracer.log_action('screenshot', {'output_path': output})
     debug.log_after(step_dir, session)
-    print(f"Screenshot saved to {output} (Debug info in {step_dir})")
+
+    tracer.close()
+    rec_path = recorder.stop()
     session.stop()
+    print(f"Screenshot saved to {output} (Debug: {step_dir})")
+    print(f"Recording: {rec_path}  Trace: {tracer.path}")
 
 
 @debug_local_app.command(name='click')
@@ -66,15 +79,26 @@ def debug_local_click(
     session.start()
 
     debug = get_debug_logger('local')
+    recorder = ScreenRecorder()
+    recorder.start(
+        session, output_path=str(
+            debug.session_dir / 'recording.mp4',
+        ),
+    )
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
     step_dir = debug.log_step(
         ActionType.CLICK, {'x': x, 'y': y, 'button': button.value}, session,
     )
-
     session.click(x, y, button)
-
+    tracer.log_action('click', {'x': x, 'y': y, 'button': button.value})
     debug.log_after(step_dir, session)
-    print(f"Clicked {button.value} at ({x}, {y}) (Debug info in {step_dir})")
+
+    tracer.close()
+    rec_path = recorder.stop()
     session.stop()
+    print(f"Clicked {button.value} at ({x}, {y}) (Debug: {step_dir})")
+    print(f"Recording: {rec_path}  Trace: {tracer.path}")
 
 
 # VNC Debug
@@ -101,17 +125,28 @@ def debug_vnc_screenshot(
     session.start()
 
     debug = get_debug_logger('vnc')
+    recorder = ScreenRecorder()
+    recorder.start(
+        session, output_path=str(
+            debug.session_dir / 'recording.mp4',
+        ),
+    )
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
     step_dir = debug.log_step(
         ActionType.SCREENSHOT, {
             'host': host, 'output': output,
         }, session,
     )
-
     session.take_screenshot(output)
-
+    tracer.log_action('screenshot', {'output_path': output})
     debug.log_after(step_dir, session)
-    print(f"Screenshot saved to {output} (Debug info in {step_dir})")
+
+    tracer.close()
+    rec_path = recorder.stop()
     session.stop()
+    print(f"Screenshot saved to {output} (Debug: {step_dir})")
+    print(f"Recording: {rec_path}  Trace: {tracer.path}")
 
 
 # RDP Debug
@@ -153,17 +188,28 @@ def debug_rdp_screenshot(
     session.start()
 
     debug = get_debug_logger('rdp')
+    recorder = ScreenRecorder()
+    recorder.start(
+        session, output_path=str(
+            debug.session_dir / 'recording.mp4',
+        ),
+    )
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
     step_dir = debug.log_step(
         ActionType.SCREENSHOT, {
             'host': host, 'output': output,
         }, session,
     )
-
     session.take_screenshot(output)
-
+    tracer.log_action('screenshot', {'output_path': output})
     debug.log_after(step_dir, session)
-    print(f"Screenshot saved to {output} (Debug info in {step_dir})")
+
+    tracer.close()
+    rec_path = recorder.stop()
     session.stop()
+    print(f"Screenshot saved to {output} (Debug: {step_dir})")
+    print(f"Recording: {rec_path}  Trace: {tracer.path}")
 
 
 if __name__ == '__main__':

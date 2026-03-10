@@ -3,6 +3,7 @@ import typer
 
 from .cli.__main__ import app as cli_app
 from .mcp.__main__ import app as mcp_app
+from .mcp.annotate import annotate
 
 # Configure structlog
 structlog.configure(
@@ -20,6 +21,7 @@ app = typer.Typer(
 
 app.add_typer(mcp_app, name='mcp')
 app.add_typer(cli_app, name='cli')
+app.command(name='annotate')(annotate)
 
 if __name__ == '__main__':
     app()

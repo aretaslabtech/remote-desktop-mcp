@@ -7,6 +7,7 @@ from ..protocol.base import MouseButton
 from .debug import ActionType
 from .debug import get_debug_logger
 from .recorder import ScreenRecorder
+from .trace import TraceLogger
 
 logger = structlog.get_logger()
 
@@ -18,15 +19,19 @@ _session: GUISession | None = None
 # Global recorder instance (None when not recording)
 _recorder: ScreenRecorder | None = None
 
+# Global trace logger (runs for the lifetime of the session)
+_tracer: TraceLogger | None = None
+
 
 def set_session(session: GUISession) -> None:
-    """Set the active session and automatically start silent screen recording."""
-    global _session, _recorder
+    """Set the active session, start silent recording, and open the trace file."""
+    global _session, _recorder, _tracer
     _session = session
     _session.start()
 
-    # Auto-start recording; output alongside the debug session directory.
     debug = get_debug_logger(session.protocol)
+
+    # Start raw screen recording (annotation-free).
     output_path = str(debug.session_dir / 'recording.mp4')
     _recorder = ScreenRecorder()
     try:
@@ -36,10 +41,15 @@ def set_session(session: GUISession) -> None:
         logger.warning('auto_recording_start_failed', error=str(exc))
         _recorder = None
 
+    # Open JSONL trace file alongside the recording.
+    trace_path = debug.session_dir / 'trace.jsonl'
+    _tracer = TraceLogger(trace_path, fps=5)
+    logger.info('trace_started', path=str(trace_path))
+
 
 def teardown() -> None:
-    """Stop the active recording and save the video.  Call before session.stop()."""
-    global _recorder
+    """Stop recording, close the trace, and save both files.  Call before session.stop()."""
+    global _recorder, _tracer
     if _recorder is not None and _recorder.is_running:
         try:
             path = _recorder.stop()
@@ -47,12 +57,19 @@ def teardown() -> None:
         except Exception as exc:
             logger.warning('auto_recording_stop_failed', error=str(exc))
         _recorder = None
+    if _tracer is not None:
+        try:
+            _tracer.close()
+            logger.info('trace_closed', path=str(_tracer.path))
+        except Exception as exc:
+            logger.warning('trace_close_failed', error=str(exc))
+        _tracer = None
 
 
 def _notify(action_type: str, params: dict) -> None:
-    """Forward an action notification to the active recorder (if any)."""
-    if _recorder is not None and _recorder.is_running:
-        _recorder.notify_action(action_type, params)
+    """Write an action to the trace file (if the tracer is active)."""
+    if _tracer is not None:
+        _tracer.log_action(action_type, params)
 
 
 @mcp.tool()
@@ -198,7 +215,7 @@ def start_recording(output_path: str = 'recording.mp4', fps: int = 5) -> str:
     if not _session:
         return 'Error: No session active.'
 
-    # Stop any existing recording (auto or previous manual) before starting a new one.
+    # Stop any existing recording before starting a new one.
     if _recorder is not None and _recorder.is_running:
         try:
             saved = _recorder.stop()
@@ -210,7 +227,7 @@ def start_recording(output_path: str = 'recording.mp4', fps: int = 5) -> str:
     _recorder = ScreenRecorder()
     try:
         _recorder.start(_session, output_path=output_path, fps=fps)
-        return f"Recording started → {output_path}  (fps={fps})"
+        return f"Recording started \u2192 {output_path}  (fps={fps})\nTrace: {_tracer.path if _tracer else 'n/a'}"
     except Exception as exc:
         _recorder = None
         return f"Error starting recording: {exc}"
