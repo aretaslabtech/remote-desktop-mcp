@@ -33,17 +33,44 @@ class LocalSession(GUISession):
         with mss(display=self.display_num) as sct:
             sct.shot(output=output_path)
 
-    def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
-        logger.info('click', protocol='local', x=x, y=y, button=button.value)
-        self._set_display_env()
+    def _get_scale_factors(self):
+        """Calculate the scale factors between physical pixels and logical coordinates."""
         import pyautogui
-        pyautogui.click(x=x, y=y, button=button.value)
+        with mss(display=self.display_num) as sct:
+            # Get the first monitor (primary)
+            monitor = sct.monitors[1]
+            phys_width = monitor['width']
+            phys_height = monitor['height']
+
+        self._set_display_env()
+        log_width, log_height = pyautogui.size()
+
+        scale_x = phys_width / log_width
+        scale_y = phys_height / log_height
+        return scale_x, scale_y
+
+    def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
+        scale_x, scale_y = self._get_scale_factors()
+        # Convert physical coordinates (from screenshot) to logical coordinates (for pyautogui)
+        lx, ly = int(x / scale_x), int(y / scale_y)
+
+        logger.info(
+            'click', protocol='local', x=x, y=y,
+            logical_x=lx, logical_y=ly, button=button.value,
+        )
+        import pyautogui
+        pyautogui.click(x=lx, y=ly, button=button.value)
 
     def move(self, x: int, y: int) -> None:
-        logger.info('move', protocol='local', x=x, y=y)
-        self._set_display_env()
+        scale_x, scale_y = self._get_scale_factors()
+        lx, ly = int(x / scale_x), int(y / scale_y)
+
+        logger.info(
+            'move', protocol='local', x=x,
+            y=y, logical_x=lx, logical_y=ly,
+        )
         import pyautogui
-        pyautogui.moveTo(x, y)
+        pyautogui.moveTo(lx, ly)
 
     def scroll(self, clicks: int) -> None:
         logger.info('scroll', protocol='local', clicks=clicks)

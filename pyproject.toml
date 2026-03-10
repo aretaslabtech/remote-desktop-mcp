@@ -12,6 +12,7 @@ dependencies = [
     "structlog>=25.5.0",
     "typer>=0.24.1",
     "vncdotool>=1.2.0",
+    "Pillow>=10.0.0",
 ]
 
 [build-system]
