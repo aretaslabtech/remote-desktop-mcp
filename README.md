@@ -61,12 +61,9 @@ uvx remote-desktop-mcp cli vnc screenshot
 - **Screenshots**: Let the AI "see" your screen.
 - **Interactions**: Mouse clicks, movement, scrolling, and keyboard typing.
 - **Protocols**: Native support for Local Desktop, RDP, and VNC.
+- **Recording**: Capture desktop sessions as video for demos, debugging, and trace replay.
 
 ## Requirements
 
 - Python 3.12+
-- For RDP: `xfreerdp` and `Xvfb` must be installed.
-
-## License
-
-MIT
+- For RDP: `xfreerdp` and `Xvfb` must be installed if you are using ubuntu.
