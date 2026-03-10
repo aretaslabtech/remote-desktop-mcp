@@ -44,6 +44,14 @@ export REMOTE_DESKTOP_VNC_PASSWORD=password
 uvx remote-desktop-mcp cli vnc screenshot
 ```
 
+## Demo
+
+Connect your android devices.
+
+```bash
+claude mcp add remote-desktop-android -- uvx remote-desktop-mcp mcp adb
+```
+
 ## Environment Variables
 
 | Variable | Description | Default |
