@@ -11,6 +11,7 @@ from ..mcp.trace import TraceLogger
 from ..protocol.adb import ADBSession
 from ..protocol.base import MouseButton
 from ..protocol.local import LocalSession
+from ..protocol.playwright import PlaywrightSession
 from ..protocol.rdp import RDPSession
 from ..protocol.vnc import VNCSession
 
@@ -237,6 +238,99 @@ def debug_rdp_screenshot(
     tracer.close()
     session.stop()
     print(f"Screenshot saved to {output} (Debug: {step_dir})")
+
+
+# Playwright Debug
+debug_playwright_app = typer.Typer(help='Debug Playwright browser.')
+app.add_typer(debug_playwright_app, name='playwright')
+
+
+@debug_playwright_app.command(name='screenshot')
+def debug_playwright_screenshot(
+    url: Annotated[
+        str,
+        typer.Option(help='Initial URL', envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL'),
+    ] = "https://www.google.com",
+    resolution: Annotated[
+        str,
+        typer.Option(
+            help='Resolution',
+            envvar='REMOTE_DESKTOP_RESOLUTION',
+        ),
+    ] = '1280x720',
+    output: str = 'playwright_screenshot.png',
+):
+    session = PlaywrightSession(url=url, resolution=resolution)
+    session.start()
+
+    debug = get_debug_logger('playwright')
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
+    step_dir = debug.log_step(
+        ActionType.SCREENSHOT, {
+            'url': url, 'output': output,
+        }, session,
+    )
+    session.take_screenshot(output)
+    tracer.log_action('screenshot', {'output_path': output})
+    debug.log_after(step_dir, session)
+
+    tracer.close()
+    session.stop()
+    print(f"Screenshot saved to {output} (Debug: {step_dir})")
+
+
+@debug_playwright_app.command(name='click')
+def debug_playwright_click(
+    x: int, y: int,
+    url: Annotated[
+        str,
+        typer.Option(help='Initial URL', envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL'),
+    ] = "https://www.google.com",
+    button: MouseButton = MouseButton.LEFT,
+):
+    session = PlaywrightSession(url=url)
+    session.start()
+
+    debug = get_debug_logger('playwright')
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
+    step_dir = debug.log_step(
+        ActionType.CLICK, {'x': x, 'y': y, 'button': button.value}, session,
+    )
+    session.click(x, y, button)
+    tracer.log_action('click', {'x': x, 'y': y, 'button': button.value})
+    debug.log_after(step_dir, session)
+
+    tracer.close()
+    session.stop()
+    print(f"Clicked {button.value} at ({x}, {y}) (Debug: {step_dir})")
+
+
+@debug_playwright_app.command(name='type')
+def debug_playwright_type(
+    text: str,
+    url: Annotated[
+        str,
+        typer.Option(help='Initial URL', envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL'),
+    ] = "https://www.google.com",
+):
+    session = PlaywrightSession(url=url)
+    session.start()
+
+    debug = get_debug_logger('playwright')
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
+    step_dir = debug.log_step(
+        ActionType.TYPE, {'text': text}, session,
+    )
+    session.type_text(text)
+    tracer.log_action('type', {'text': text})
+    debug.log_after(step_dir, session)
+
+    tracer.close()
+    session.stop()
+    print(f"Typed '{text}' (Debug: {step_dir})")
 
 
 if __name__ == '__main__':

@@ -7,6 +7,7 @@ import typer
 
 from ..protocol.adb import ADBSession
 from ..protocol.local import LocalSession
+from ..protocol.playwright import PlaywrightSession
 from ..protocol.rdp import RDPSession
 from ..protocol.vnc import VNCSession
 from .server import mcp
@@ -159,6 +160,60 @@ def mcp_vnc(
     """Start MCP server for a VNC connection."""
     logger.info('starting_vnc_mcp_server', host=host, record=record)
     session = VNCSession(host=host, password=password)
+    set_session(session, record=record)
+    try:
+        mcp.run()
+    finally:
+        teardown()
+        session.stop()
+
+
+@app.command(name='playwright')
+def mcp_playwright(
+    url: Annotated[
+        str,
+        typer.Option(
+            help='Initial URL to open.',
+            envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL',
+        ),
+    ] = "https://www.google.com",
+    resolution: Annotated[
+        str,
+        typer.Option(
+            help='Screen resolution (e.g. 1280x720).',
+            envvar='REMOTE_DESKTOP_RESOLUTION',
+        ),
+    ] = '1280x720',
+    headless: Annotated[
+        bool,
+        typer.Option(
+            help='Run browser in headless mode.',
+            envvar='REMOTE_DESKTOP_PLAYWRIGHT_HEADLESS',
+        ),
+    ] = False,
+    user_data_dir: Annotated[
+        str | None,
+        typer.Option(
+            help='Path to a user data directory for persistent session.',
+            envvar='REMOTE_DESKTOP_PLAYWRIGHT_USER_DATA_DIR',
+        ),
+    ] = None,
+    record: Annotated[
+        bool,
+        typer.Option(
+            help='Enable continuous screen recording for the whole session.',
+        ),
+    ] = False,
+):
+    """Start MCP server for a Playwright browser session."""
+    logger.info(
+        'starting_playwright_mcp_server',
+        url=url, resolution=resolution, headless=headless, record=record,
+    )
+    session = PlaywrightSession(
+        url=url, resolution=resolution,
+        headless=headless, user_data_dir=user_data_dir,
+    )
     set_session(session, record=record)
     try:
         mcp.run()

@@ -247,3 +247,9 @@ __marimo__/
 
 # Google Agent Developer Kit
 .adk/
+
+# Logs
+.logs/
+
+# Screenshots
+*.png
