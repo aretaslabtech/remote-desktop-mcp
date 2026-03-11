@@ -176,7 +176,7 @@ def mcp_playwright(
             help='Initial URL to open.',
             envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL',
         ),
-    ] = "https://www.google.com",
+    ] = 'https://www.google.com',
     resolution: Annotated[
         str,
         typer.Option(

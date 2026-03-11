@@ -1,8 +1,15 @@
-import structlog
-from playwright.sync_api import sync_playwright, Playwright, Browser, BrowserContext, Page
-from typing import ClassVar, Optional
+from typing import ClassVar
 
-from .base import GUISession, Key, MouseButton
+import structlog
+from playwright.sync_api import Browser
+from playwright.sync_api import BrowserContext
+from playwright.sync_api import Page
+from playwright.sync_api import Playwright
+from playwright.sync_api import sync_playwright
+
+from .base import GUISession
+from .base import Key
+from .base import MouseButton
 
 logger = structlog.get_logger()
 
@@ -46,15 +53,16 @@ KEY_MAP = {
     Key.PRINTSCREEN: 'PrintScreen',
 }
 
+
 class PlaywrightSession(GUISession):
     protocol: ClassVar[str] = 'playwright'
 
     def __init__(
         self,
-        url: str = "https://www.google.com",
-        resolution: str = "1280x720",
+        url: str = 'https://www.google.com',
+        resolution: str = '1280x720',
         headless: bool = False,
-        user_data_dir: Optional[str] = None,
+        user_data_dir: str | None = None,
     ) -> None:
         self.url = url
         res_parts = resolution.split('x')
@@ -62,26 +70,29 @@ class PlaywrightSession(GUISession):
         self.height = int(res_parts[1])
         self.headless = headless
         self.user_data_dir = user_data_dir
-        
-        self._playwright: Optional[Playwright] = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
-        self._page: Optional[Page] = None
+
+        self._playwright: Playwright | None = None
+        self._browser: Browser | None = None
+        self._context: BrowserContext | None = None
+        self._page: Page | None = None
 
     def start(self) -> None:
-        logger.info('starting_playwright_session', protocol='playwright', url=self.url)
+        logger.info(
+            'starting_playwright_session',
+            protocol='playwright', url=self.url,
+        )
         self._playwright = sync_playwright().start()
-        
+
         browser_args = [
-            "--disable-blink-features=AutomationControlled",
+            '--disable-blink-features=AutomationControlled',
         ]
-        
+
         if self.user_data_dir:
             self._context = self._playwright.chromium.launch_persistent_context(
                 self.user_data_dir,
                 headless=self.headless,
                 args=browser_args,
-                viewport={"width": self.width, "height": self.height},
+                viewport={'width': self.width, 'height': self.height},
             )
             self._browser = self._context.browser
         else:
@@ -90,16 +101,16 @@ class PlaywrightSession(GUISession):
                 args=browser_args,
             )
             self._context = self._browser.new_context(
-                viewport={"width": self.width, "height": self.height},
+                viewport={'width': self.width, 'height': self.height},
             )
 
         if self._context.pages:
             self._page = self._context.pages[0]
         else:
             self._page = self._context.new_page()
-            
+
         self._page.goto(self.url)
-        self._page.wait_for_load_state("networkidle")
+        self._page.wait_for_load_state('networkidle')
 
     def stop(self) -> None:
         logger.info('stopping_playwright_session', protocol='playwright')
@@ -116,7 +127,10 @@ class PlaywrightSession(GUISession):
             self._page.screenshot(path=output_path)
 
     def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
-        logger.info('click', protocol='playwright', x=x, y=y, button=button.value)
+        logger.info(
+            'click', protocol='playwright',
+            x=x, y=y, button=button.value,
+        )
         if self._page:
             self._page.mouse.click(x, y, button=button.value)
 
@@ -128,7 +142,7 @@ class PlaywrightSession(GUISession):
     def scroll(self, clicks: int) -> None:
         logger.info('scroll', protocol='playwright', clicks=clicks)
         # Playwright's mouse.wheel(delta_x, delta_y)
-        # clicks > 0 is scroll up, so delta_y should be negative? 
+        # clicks > 0 is scroll up, so delta_y should be negative?
         # Actually in many APIs, positive delta_y is scroll down.
         # base.py says: "Positive for up, negative for down."
         # Playwright mouse.wheel(delta_x, delta_y): delta_y is vertical scroll amount.
@@ -163,5 +177,5 @@ class PlaywrightSession(GUISession):
                     mapped_keys.append(KEY_MAP.get(key_enum, k))
                 except ValueError:
                     mapped_keys.append(k)
-            
-            self._page.keyboard.press("+".join(mapped_keys))
+
+            self._page.keyboard.press('+'.join(mapped_keys))

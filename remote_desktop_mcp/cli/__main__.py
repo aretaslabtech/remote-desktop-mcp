@@ -249,8 +249,11 @@ app.add_typer(debug_playwright_app, name='playwright')
 def debug_playwright_screenshot(
     url: Annotated[
         str,
-        typer.Option(help='Initial URL', envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL'),
-    ] = "https://www.google.com",
+        typer.Option(
+            help='Initial URL',
+            envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL',
+        ),
+    ] = 'https://www.google.com',
     resolution: Annotated[
         str,
         typer.Option(
@@ -285,8 +288,11 @@ def debug_playwright_click(
     x: int, y: int,
     url: Annotated[
         str,
-        typer.Option(help='Initial URL', envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL'),
-    ] = "https://www.google.com",
+        typer.Option(
+            help='Initial URL',
+            envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL',
+        ),
+    ] = 'https://www.google.com',
     button: MouseButton = MouseButton.LEFT,
 ):
     session = PlaywrightSession(url=url)
@@ -312,8 +318,11 @@ def debug_playwright_type(
     text: str,
     url: Annotated[
         str,
-        typer.Option(help='Initial URL', envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL'),
-    ] = "https://www.google.com",
+        typer.Option(
+            help='Initial URL',
+            envvar='REMOTE_DESKTOP_PLAYWRIGHT_URL',
+        ),
+    ] = 'https://www.google.com',
 ):
     session = PlaywrightSession(url=url)
     session.start()

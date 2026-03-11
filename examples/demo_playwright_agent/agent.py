@@ -1,7 +1,5 @@
 from google.adk import Agent
-from google.adk.models.google_llm import Gemini
 from google.adk.tools.computer_use.computer_use_toolset import ComputerUseToolset
-from typing_extensions import override
 
 from .playwright_computer import PlaywrightComputer
 
@@ -14,6 +12,10 @@ root_agent = Agent(
     ),
     instruction='you are a computer use agent',
     tools=[
-        ComputerUseToolset(computer=PlaywrightComputer(screen_size=(1280, 936)))
+        ComputerUseToolset(
+            computer=PlaywrightComputer(
+                screen_size=(1280, 936),
+            ),
+        ),
     ],
 )
