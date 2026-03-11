@@ -3,7 +3,7 @@ from google.adk.models.google_llm import Gemini
 from google.adk.tools.computer_use.computer_use_toolset import ComputerUseToolset
 from typing_extensions import override
 
-from .playwright import PlaywrightComputer
+from .playwright_computer import PlaywrightComputer
 
 root_agent = Agent(
     model='gemini-2.5-computer-use-preview-10-2025',
