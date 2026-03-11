@@ -5,14 +5,19 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "browserbase>=1.5.0",
     "fastmcp>=3.1.0",
+    "google-adk>=1.26.0",
     "imageio>=2.37.3",
     "imageio-ffmpeg>=0.6.0",
     "mss>=10.1.0",
     "numpy>=2.4.3",
+    "playwright>=1.58.0",
     "pyautogui>=0.9.54",
     "python-xlib>=0.33",
+    "rich>=14.3.3",
     "structlog>=25.5.0",
+    "termcolor>=3.3.0",
     "typer>=0.24.1",
     "vncdotool>=1.2.0",
 ]
