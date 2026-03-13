@@ -20,18 +20,18 @@ The easiest way to install this server is via the Gemini CLI:
 gemini mcp add remote-desktop uvx remote-desktop-mcp mcp local
 
 # Android (ADB)
-gemini mcp add remote-desktop-vnc -- uvx remote-desktop-mcp mcp adb
+gemini mcp add remote-desktop-vnc uvx remote-desktop-mcp mcp adb
 
 # RDP
 gemini mcp add remote-desktop-rdp \
     -e REMOTE_DESKTOP_RDP_HOST=192.168.1.1 \
     -e REMOTE_DESKTOP_RDP_USER=ubuntu \
     -e REMOTE_DESKTOP_RDP_PASSWORD=ubuntu \
-    -- uvx remote-desktop-mcp mcp rdp
+    uvx remote-desktop-mcp mcp rdp
 
 # VNC
 gemini mcp add remote-desktop-vnc \
     -e REMOTE_DESKTOP_VNC_HOST=127.0.0.1:5900 \
     -e REMOTE_DESKTOP_VNC_PASSWORD=password \
-    -- uvx remote-desktop-mcp mcp vnc
+    uvx remote-desktop-mcp mcp vnc
 ```
