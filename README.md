@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server for remote desktop control (Local, RDP, VNC). This allows AI models like Claude to see and interact with your desktop.
 
-![demo](./examples/demo.gif)
+![](./examples/recordings/demo.gif)
 
 ## Quick Start
 
