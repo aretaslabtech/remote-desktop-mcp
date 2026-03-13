@@ -1,6 +1,6 @@
 # Remote Desktop MCP
 
-A Model Context Protocol (MCP) server for remote desktop control (Local, RDP, VNC). This allows AI models like Claude to see and interact with your desktop.
+A Model Context Protocol (MCP) server for remote desktop control (Local, RDP, VNC, ADB). This allows AI models like Claude to see and interact with your desktop.
 
 ![](./examples/recordings/demo.gif)
 
