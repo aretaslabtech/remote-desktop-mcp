@@ -69,7 +69,7 @@ class RDPSession(DesktopSession):
             '+fonts',
             '+aero',
             '+window-drag',
-            '+menu-animations',
+            '+menu-anims',
             '/network:auto',
             '/gdi:sw',
         ]
