@@ -37,13 +37,13 @@ class LocalSession(DesktopSession):
 
     def _get_scale_factors(self) -> tuple[float, float]:
         """Calculate the scale factors between physical pixels and logical coordinates."""
+        self._set_display_env()
         import pyautogui
         with mss(display=self.display_num) as sct:
             monitor = sct.monitors[1]
             phys_width = monitor['width']
             phys_height = monitor['height']
 
-        self._set_display_env()
         log_width, log_height = pyautogui.size()
 
         scale_x = phys_width / log_width

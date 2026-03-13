@@ -43,6 +43,7 @@ class RDPSession(DesktopSession):
         os.environ['DISPLAY'] = self.display_num
 
     def start(self) -> None:
+        self._set_display_env()
         logger.info('starting_xvfb', protocol='rdp', display=self.display_num)
         xvfb_cmd: list[str] = [
             'Xvfb', self.display_num,
@@ -54,7 +55,6 @@ class RDPSession(DesktopSession):
         time.sleep(1)
 
         logger.info('starting_xfreerdp', protocol='rdp', host=self.host)
-        self._set_display_env()
         rdp_cmd: list[str] = [
             'xfreerdp',
             f"/v:{self.host}",
@@ -64,6 +64,14 @@ class RDPSession(DesktopSession):
             '/cert:ignore',
             '/bpp:24',
             '+clipboard',
+            '/relax-order-checks',
+            '/kbd:0x00000409',
+            '+fonts',
+            '+aero',
+            '+window-drag',
+            '+menu-animations',
+            '/network:auto',
+            '/gdi:sw',
         ]
         self.rdp_proc = subprocess.Popen(
             rdp_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -79,13 +87,14 @@ class RDPSession(DesktopSession):
 
     def take_screenshot(self, output_path: str) -> None:
         logger.info('screenshot', protocol='rdp', path=output_path)
+        self._set_display_env()
         with mss(display=self.display_num) as sct:
             sct.shot(output=output_path)
 
     def _get_scale_factors(self) -> tuple[float, float]:
         """Calculate the scale factors between physical pixels and logical coordinates."""
-        import pyautogui
         self._set_display_env()
+        import pyautogui
         with mss(display=self.display_num) as sct:
             monitor = sct.monitors[1]
             phys_width = monitor['width']
@@ -98,6 +107,7 @@ class RDPSession(DesktopSession):
         return scale_x, scale_y
 
     def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
+        self._set_display_env()
         scale_x, scale_y = self._get_scale_factors()
         lx, ly = round(x / scale_x), round(y / scale_y)
 
@@ -109,6 +119,7 @@ class RDPSession(DesktopSession):
         pyautogui.click(x=lx, y=ly, button=button.value)
 
     def move(self, x: int, y: int) -> None:
+        self._set_display_env()
         scale_x, scale_y = self._get_scale_factors()
         lx, ly = round(x / scale_x), round(y / scale_y)
 
@@ -129,7 +140,7 @@ class RDPSession(DesktopSession):
         logger.info('type_text', protocol='rdp', text=text)
         self._set_display_env()
         import pyautogui
-        pyautogui.write(text)
+        pyautogui.write(text, interval=0.05)
 
     def key_event(self, key: Key) -> None:
         logger.info('key_event', protocol='rdp', key=key.value)

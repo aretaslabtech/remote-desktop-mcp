@@ -44,7 +44,7 @@ class Key(Enum):
     SHIFT = 'shift'
     CTRL = 'ctrl'
     ALT = 'alt'
-    CMD = 'cmd'       # macOS Command / Windows key
+    CMD = 'win'       # macOS Command / Windows key
     WIN = 'win'       # Windows key alias
     OPTION = 'option'  # macOS Option alias
     # Media / system

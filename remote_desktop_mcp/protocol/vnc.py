@@ -12,6 +12,51 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
+# Mapping of our Key enum to vncdotool key names
+# Reference: vncdotool/client.py KEYMAP
+KEY_MAP = {
+    Key.ENTER: 'enter',
+    Key.BACKSPACE: 'backspace',
+    Key.DELETE: 'delete',
+    Key.TAB: 'tab',
+    Key.SPACE: 'space',
+    Key.ESC: 'esc',
+    Key.UP: 'up',
+    Key.DOWN: 'down',
+    Key.LEFT: 'left',
+    Key.RIGHT: 'right',
+    Key.HOME: 'home',
+    Key.END: 'end',
+    Key.PAGEUP: 'pgup',
+    Key.PAGEDOWN: 'pgdn',
+    Key.INSERT: 'ins',
+    Key.F1: 'f1',
+    Key.F2: 'f2',
+    Key.F3: 'f3',
+    Key.F4: 'f4',
+    Key.F5: 'f5',
+    Key.F6: 'f6',
+    Key.F7: 'f7',
+    Key.F8: 'f8',
+    Key.F9: 'f9',
+    Key.F10: 'f10',
+    Key.F11: 'f11',
+    Key.F12: 'f12',
+    Key.SHIFT: 'shift',
+    Key.CTRL: 'ctrl',
+    Key.ALT: 'alt',
+    Key.CMD: 'meta',
+    Key.WIN: 'super',
+    Key.OPTION: 'alt',
+    Key.CAPSLOCK: 'caplk',
+    Key.NUMLOCK: 'numlk',
+    Key.SCROLLLOCK: 'scrlk',
+    Key.PRINTSCREEN: 'print',
+    Key.VOLUMEUP: 'volumeup',
+    Key.VOLUMEDOWN: 'volumedown',
+    Key.VOLUMEMUTE: 'volumemute',
+}
+
 
 class VNCSession(DesktopSession):
     protocol = 'vnc'
@@ -71,14 +116,24 @@ class VNCSession(DesktopSession):
     def key_event(self, key: Key) -> None:
         logger.info('key_event', protocol='vnc', key=key.value)
         if self.client:
-            self.client.keyPress(key.value)
+            vnc_key = KEY_MAP.get(key, key.value)
+            self.client.keyPress(vnc_key)
 
     def hotkey(self, *keys: str) -> None:
         logger.info('hotkey', protocol='vnc', keys=list(keys))
         if self.client:
+            mapped_keys = []
             for k in keys:
+                # Try to find if this string matches a Key enum value
+                try:
+                    key_enum = Key(k.lower())
+                    mapped_keys.append(KEY_MAP.get(key_enum, k))
+                except ValueError:
+                    mapped_keys.append(k)
+
+            for k in mapped_keys:
                 self.client.keyDown(k)
-            for k in reversed(keys):
+            for k in reversed(mapped_keys):
                 self.client.keyUp(k)
 
     def get_screen_size(self) -> tuple[int, int]:
