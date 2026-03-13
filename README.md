@@ -24,7 +24,7 @@ gemini mcp add remote-desktop-vnc uvx remote-desktop-mcp mcp adb
 
 # RDP
 gemini mcp add remote-desktop-rdp \
-    -e REMOTE_DESKTOP_RDP_HOST=192.168.1.1 \
+    -e REMOTE_DESKTOP_RDP_HOST=10.134.179.153 \
     -e REMOTE_DESKTOP_RDP_USER=ubuntu \
     -e REMOTE_DESKTOP_RDP_PASSWORD=ubuntu \
     uvx remote-desktop-mcp mcp rdp

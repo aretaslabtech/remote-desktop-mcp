@@ -251,5 +251,5 @@ __marimo__/
 # Logs
 .logs/
 
-# Screenshots
-*.png
+# Gemini
+.gemini/
