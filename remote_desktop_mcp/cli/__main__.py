@@ -55,8 +55,8 @@ def debug_adb_screenshot(
     print(f"Screenshot saved to {output} (Debug: {step_dir})")
 
 
-@debug_adb_app.command(name='click')
-def debug_adb_click(
+@debug_adb_app.command(name='tap')
+def debug_adb_tap(
     x: int, y: int,
     serial: Annotated[
         str | None,
@@ -70,15 +70,51 @@ def debug_adb_click(
     tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
 
     step_dir = debug.log_step(
-        ActionType.CLICK, {'x': x, 'y': y}, session,
+        ActionType.TAP, {'x': x, 'y': y}, session,
     )
-    session.click(x, y)
-    tracer.log_action('click', {'x': x, 'y': y})
+    session.tap(x, y)
+    tracer.log_action('tap', {'x': x, 'y': y})
     debug.log_after(step_dir, session)
 
     tracer.close()
     session.stop()
-    print(f"Clicked at ({x}, {y}) (Debug: {step_dir})")
+    print(f"Tapped at ({x}, {y}) (Debug: {step_dir})")
+
+
+@debug_adb_app.command(name='swipe')
+def debug_adb_swipe(
+    x1: int, y1: int, x2: int, y2: int,
+    duration_ms: int = 300,
+    serial: Annotated[
+        str | None,
+        typer.Option(help='ADB serial', envvar='REMOTE_DESKTOP_ADB_SERIAL'),
+    ] = None,
+):
+    session = ADBSession(serial=serial)
+    session.start()
+
+    debug = get_debug_logger('adb')
+    tracer = TraceLogger(debug.session_dir / 'trace.jsonl')
+
+    step_dir = debug.log_step(
+        ActionType.SWIPE,
+        {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'duration_ms': duration_ms},
+        session,
+    )
+    session.swipe(x1, y1, x2, y2, duration_ms)
+    tracer.log_action(
+        'swipe', {
+            'x1': x1, 'y1': y1,
+            'x2': x2, 'y2': y2, 'duration_ms': duration_ms,
+        },
+    )
+    debug.log_after(step_dir, session)
+
+    tracer.close()
+    session.stop()
+    print(
+        f"Swiped ({x1},{y1}) -> ({x2},{y2}) in {duration_ms}ms (Debug: {step_dir})",
+    )
 
 
 # Local Debug

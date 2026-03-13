@@ -5,14 +5,14 @@ import time
 import structlog
 from mss import mss
 
-from .base import GUISession
+from .base import DesktopSession
 from .base import Key
 from .base import MouseButton
 
 logger = structlog.get_logger()
 
 
-class RDPSession(GUISession):
+class RDPSession(DesktopSession):
     protocol = 'rdp'
 
     host: str
@@ -82,12 +82,11 @@ class RDPSession(GUISession):
         with mss(display=self.display_num) as sct:
             sct.shot(output=output_path)
 
-    def _get_scale_factors(self):
+    def _get_scale_factors(self) -> tuple[float, float]:
         """Calculate the scale factors between physical pixels and logical coordinates."""
         import pyautogui
         self._set_display_env()
         with mss(display=self.display_num) as sct:
-            # For RDP/Xvfb, usually we only have one monitor (monitor 1)
             monitor = sct.monitors[1]
             phys_width = monitor['width']
             phys_height = monitor['height']
@@ -100,7 +99,7 @@ class RDPSession(GUISession):
 
     def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
         scale_x, scale_y = self._get_scale_factors()
-        lx, ly = int(x / scale_x), int(y / scale_y)
+        lx, ly = round(x / scale_x), round(y / scale_y)
 
         logger.info(
             'click', protocol='rdp', x=x, y=y,
@@ -111,7 +110,7 @@ class RDPSession(GUISession):
 
     def move(self, x: int, y: int) -> None:
         scale_x, scale_y = self._get_scale_factors()
-        lx, ly = int(x / scale_x), int(y / scale_y)
+        lx, ly = round(x / scale_x), round(y / scale_y)
 
         logger.info(
             'move', protocol='rdp', x=x,

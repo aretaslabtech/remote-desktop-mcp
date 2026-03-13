@@ -7,7 +7,7 @@ from playwright.sync_api import Page
 from playwright.sync_api import Playwright
 from playwright.sync_api import sync_playwright
 
-from .base import GUISession
+from .base import DesktopSession
 from .base import Key
 from .base import MouseButton
 
@@ -54,7 +54,7 @@ KEY_MAP = {
 }
 
 
-class PlaywrightSession(GUISession):
+class PlaywrightSession(DesktopSession):
     protocol: ClassVar[str] = 'playwright'
 
     def __init__(
@@ -141,13 +141,6 @@ class PlaywrightSession(GUISession):
 
     def scroll(self, clicks: int) -> None:
         logger.info('scroll', protocol='playwright', clicks=clicks)
-        # Playwright's mouse.wheel(delta_x, delta_y)
-        # clicks > 0 is scroll up, so delta_y should be negative?
-        # Actually in many APIs, positive delta_y is scroll down.
-        # base.py says: "Positive for up, negative for down."
-        # Playwright mouse.wheel(delta_x, delta_y): delta_y is vertical scroll amount.
-        # Usually scrolling "up" means delta_y is negative in browser terms (moving the view up).
-        # Let's check playwright docs or assume a factor.
         if self._page:
             self._page.mouse.wheel(0, -clicks * 100)
 
@@ -168,8 +161,6 @@ class PlaywrightSession(GUISession):
     def hotkey(self, *keys: str) -> None:
         logger.info('hotkey', protocol='playwright', keys=list(keys))
         if self._page:
-            # Join keys with '+' for playwright keyboard.press
-            # We need to map them first if they are in our Key enum (as strings)
             mapped_keys = []
             for k in keys:
                 try:

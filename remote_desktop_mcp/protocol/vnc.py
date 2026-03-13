@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from .base import GUISession
+from .base import DesktopSession
 from .base import Key
 from .base import MouseButton
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
-class VNCSession(GUISession):
+class VNCSession(DesktopSession):
     protocol = 'vnc'
 
     host: str

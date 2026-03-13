@@ -47,7 +47,8 @@ _HUD_H: int = 66           # height of 3-line HUD bar appended below the frame
 
 # Only these action types are considered real UI interactions that pause fast-forward.
 _UI_ACTIONS: frozenset[str] = frozenset({
-    'click', 'type', 'key', 'hotkey', 'scroll', 'move',
+    'tap', 'click', 'type', 'key', 'hotkey', 'scroll', 'move',
+    'swipe', 'long_press',
 })
 
 
@@ -476,12 +477,14 @@ def _render_annotations(img: Image.Image, active: list[tuple[dict, float]], ttl:
         alpha = int(alpha_f * 255)
         action = rec.get('action', '')
         params = rec.get('params', {})
-        if action == 'click':
+        if action in ('click', 'tap', 'long_press'):
             _draw_click(draw, params, alpha, alpha_f)
         elif action == 'move':
             _draw_move(draw, params, alpha)
         elif action == 'scroll':
             _draw_scroll(draw, img.size, params, alpha)
+        elif action == 'swipe':
+            _draw_swipe(draw, params, alpha)
 
     img = Image.alpha_composite(rgba, overlay).convert('RGB')
 
@@ -489,7 +492,7 @@ def _render_annotations(img: Image.Image, active: list[tuple[dict, float]], ttl:
         alpha_f = max(0.0, 1.0 - elapsed / ttl)
         action = rec.get('action', '')
         params = rec.get('params', {})
-        if action in ('type', 'key', 'hotkey'):
+        if action in ('type', 'key', 'hotkey', 'long_press'):
             img = _draw_text_banner(img, action, params, alpha_f)
 
     return img
@@ -498,8 +501,11 @@ def _render_annotations(img: Image.Image, active: list[tuple[dict, float]], ttl:
 def _draw_click(draw: ImageDraw.ImageDraw, params: dict, alpha: int, alpha_f: float) -> None:
     x, y = params.get('x', 0), params.get('y', 0)
     button = params.get('button', 'left')
-    color = (255, 50, 50, alpha) if button == 'left' else \
-            (50, 50, 255, alpha) if button == 'right' else (50, 220, 50, alpha)
+    color = {
+        'left': (255, 50, 50, alpha),
+        'right': (50, 50, 255, alpha),
+        'middle': (50, 220, 50, alpha),
+    }.get(button, (255, 50, 50, alpha))
     r = max(6, int(36 * alpha_f))
     draw.ellipse((x - r, y - r, x + r, y + r), outline=color, width=3)
     draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=color)
@@ -532,6 +538,21 @@ def _draw_scroll(draw: ImageDraw.ImageDraw, size: tuple[int, int], params: dict,
         draw.rectangle([cx - 4, cy - 14, cx + 4, cy], fill=c)
 
 
+def _draw_swipe(draw: ImageDraw.ImageDraw, params: dict, alpha: int) -> None:
+    x1, y1 = params.get('x1', 0), params.get('y1', 0)
+    x2, y2 = params.get('x2', 0), params.get('y2', 0)
+    c = (50, 220, 220, alpha)
+    # Start dot
+    draw.ellipse((x1 - 6, y1 - 6, x1 + 6, y1 + 6), fill=c)
+    # Arrow line
+    draw.line((x1, y1, x2, y2), fill=c, width=3)
+    # End dot
+    draw.ellipse(
+        (x2 - 4, y2 - 4, x2 + 4, y2 + 4),
+        fill=c, outline=(255, 255, 255, alpha),
+    )
+
+
 def _draw_text_banner(img: Image.Image, action: str, params: dict, alpha_f: float) -> Image.Image:
     w, h = img.size
     banner_h = 42
@@ -544,6 +565,9 @@ def _draw_text_banner(img: Image.Image, action: str, params: dict, alpha_f: floa
     elif action == 'hotkey':
         text = f'\u2328  Hotkey:  [ {params.get("keys", "").upper()} ]'
         bg, fg = (40, 20, 55), (200, 150, 255)
+    elif action == 'long_press':
+        text = f'\u261e  Long press ({params.get("x", 0)}, {params.get("y", 0)}) {params.get("duration_ms", 500)}ms'
+        bg, fg = (50, 30, 0), (255, 180, 50)
     else:
         return img
     if len(text) > 90:
@@ -570,24 +594,36 @@ def _fmt_action_short(rec: dict) -> str:
     """One-line summary of a trace action record."""
     action = rec.get('action', '?')
     params = rec.get('params', {})
+    if action == 'tap':
+        return f'tap ({params.get("x", 0)}, {params.get("y", 0)})'
     if action == 'click':
         btn = params.get('button', 'left')
-        btn_sym = {'left': '←', 'right': '→', 'middle': '↔'}.get(btn, btn)
+        btn_sym = {
+            'left': '\u2190', 'right': '\u2192',
+            'middle': '\u2194',
+        }.get(btn, btn)
         return f'click {btn_sym} ({params.get("x", 0)}, {params.get("y", 0)})'
     if action == 'type':
         t = params.get('text', '')
         if len(t) > 24:
-            t = t[:21] + '…'
+            t = t[:21] + '\u2026'
         return f'type {repr(t)}'
     if action == 'key':
         return f'key [{params.get("key", "?").upper()}]'
     if action == 'hotkey':
         return f'hotkey [{params.get("keys", "?").upper()}]'
     if action == 'scroll':
-        direction = '↑' if params.get('clicks', 0) > 0 else '↓'
+        direction = '\u2191' if params.get('clicks', 0) > 0 else '\u2193'
         return f'scroll {direction}{abs(params.get("clicks", 1))}'
     if action == 'move':
         return f'move ({params.get("x", 0)}, {params.get("y", 0)})'
+    if action == 'swipe':
+        return (
+            f'swipe ({params.get("x1", 0)},{params.get("y1", 0)})'
+            f'\u2192({params.get("x2", 0)},{params.get("y2", 0)})'
+        )
+    if action == 'long_press':
+        return f'long press ({params.get("x", 0)}, {params.get("y", 0)})'
     if action == 'screenshot':
         return 'screenshot'
     return action

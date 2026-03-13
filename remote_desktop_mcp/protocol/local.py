@@ -3,14 +3,14 @@ import os
 import structlog
 from mss import mss
 
-from .base import GUISession
+from .base import DesktopSession
 from .base import Key
 from .base import MouseButton
 
 logger = structlog.get_logger()
 
 
-class LocalSession(GUISession):
+class LocalSession(DesktopSession):
     protocol = 'local'
 
     display_num: str | None
@@ -35,11 +35,10 @@ class LocalSession(GUISession):
         with mss(display=self.display_num) as sct:
             sct.shot(output=output_path)
 
-    def _get_scale_factors(self):
+    def _get_scale_factors(self) -> tuple[float, float]:
         """Calculate the scale factors between physical pixels and logical coordinates."""
         import pyautogui
         with mss(display=self.display_num) as sct:
-            # Get the first monitor (primary)
             monitor = sct.monitors[1]
             phys_width = monitor['width']
             phys_height = monitor['height']
@@ -53,8 +52,7 @@ class LocalSession(GUISession):
 
     def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
         scale_x, scale_y = self._get_scale_factors()
-        # Convert physical coordinates (from screenshot) to logical coordinates (for pyautogui)
-        lx, ly = int(x / scale_x), int(y / scale_y)
+        lx, ly = round(x / scale_x), round(y / scale_y)
 
         logger.info(
             'click', protocol='local', x=x, y=y,
@@ -65,7 +63,7 @@ class LocalSession(GUISession):
 
     def move(self, x: int, y: int) -> None:
         scale_x, scale_y = self._get_scale_factors()
-        lx, ly = int(x / scale_x), int(y / scale_y)
+        lx, ly = round(x / scale_x), round(y / scale_y)
 
         logger.info(
             'move', protocol='local', x=x,

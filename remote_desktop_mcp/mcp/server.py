@@ -8,8 +8,10 @@ from fastmcp import FastMCP
 from mcp.types import ImageContent
 from mcp.types import TextContent
 
+from ..protocol.base import DesktopSession
 from ..protocol.base import GUISession
 from ..protocol.base import Key
+from ..protocol.base import MobileSession
 from ..protocol.base import MouseButton
 from .debug import ActionType
 from .debug import get_debug_logger
@@ -91,13 +93,16 @@ def _notify(action_type: str, params: dict) -> None:
         _tracer.log_action(action_type, params)
 
 
+# =========================================================================== #
+# Common tools — available on both desktop and mobile sessions
+# =========================================================================== #
+
 @mcp.tool()
 def take_screenshot(output_path: str = 'screenshot.png') -> list[TextContent | ImageContent]:
-    """Capture a screenshot of the remote desktop."""
+    """Capture a screenshot of the remote desktop or mobile screen."""
     if not _session:
         return [TextContent(type='text', text='Error: No session active.')]
 
-    # Debug logging
     debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(
         ActionType.SCREENSHOT, {
@@ -122,60 +127,23 @@ def take_screenshot(output_path: str = 'screenshot.png') -> list[TextContent | I
 
 
 @mcp.tool()
-def mouse_click(x: int, y: int, button: str = 'left') -> str:
-    """Click at the specified coordinates (x, y)."""
-    if not _session:
-        return 'Error: No session active.'
-    try:
-        btn = MouseButton(button.lower())
-    except ValueError:
-        return f"Error: Invalid button '{button}'. Use 'left', 'middle', or 'right'."
+def tap(x: int, y: int) -> str:
+    """Tap at the specified coordinates (x, y).
 
-    # Debug logging
-    debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(
-        ActionType.CLICK, {'x': x, 'y': y, 'button': button}, _session,
-    )
-
-    _session.click(x, y, btn)
-
-    _notify('click', {'x': x, 'y': y, 'button': button})
-    debug.log_after(step_dir, _session)
-    return f"Clicked {button} at ({x}, {y}) (Debug: {step_dir})"
-
-
-@mcp.tool()
-def mouse_move(x: int, y: int) -> str:
-    """Move the mouse cursor to (x, y)."""
+    On desktop sessions this is equivalent to a left-click.
+    On mobile sessions this is a touch tap.
+    """
     if not _session:
         return 'Error: No session active.'
 
-    # Debug logging
     debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(ActionType.MOVE, {'x': x, 'y': y}, _session)
+    step_dir = debug.log_step(ActionType.TAP, {'x': x, 'y': y}, _session)
 
-    _session.move(x, y)
+    _session.tap(x, y)
 
-    _notify('move', {'x': x, 'y': y})
+    _notify('tap', {'x': x, 'y': y})
     debug.log_after(step_dir, _session)
-    return f"Moved mouse to ({x}, {y}) (Debug: {step_dir})"
-
-
-@mcp.tool()
-def mouse_scroll(clicks: int) -> str:
-    """Scroll the mouse wheel. Positive for up, negative for down."""
-    if not _session:
-        return 'Error: No session active.'
-
-    # Debug logging
-    debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(ActionType.SCROLL, {'clicks': clicks}, _session)
-
-    _session.scroll(clicks)
-
-    _notify('scroll', {'clicks': clicks})
-    debug.log_after(step_dir, _session)
-    return f"Scrolled {clicks} clicks (Debug: {step_dir})"
+    return f"Tapped at ({x}, {y}) (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -184,7 +152,6 @@ def type_text(text: str) -> str:
     if not _session:
         return 'Error: No session active.'
 
-    # Debug logging
     debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(ActionType.TYPE, {'text': text}, _session)
 
@@ -205,7 +172,8 @@ def press_key(key_name: str) -> str:
     capslock, numlock, scrolllock, printscreen,
     volumeup, volumedown, volumemute.
 
-    For key combinations (e.g. cmd+space, ctrl+c) use press_hotkey instead.
+    For key combinations (e.g. cmd+space, ctrl+c) use press_hotkey instead
+    (desktop only).
     """
     if not _session:
         return 'Error: No session active.'
@@ -215,7 +183,6 @@ def press_key(key_name: str) -> str:
         valid_keys = ', '.join([k.value for k in Key])
         return f"Error: Invalid key '{key_name}'. Valid keys: {valid_keys}"
 
-    # Debug logging
     debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(ActionType.KEY, {'key': key_name}, _session)
 
@@ -226,21 +193,93 @@ def press_key(key_name: str) -> str:
     return f"Pressed key: {key_name} (Debug: {step_dir})"
 
 
+# =========================================================================== #
+# Desktop-only tools — mouse_click, mouse_move, mouse_scroll, press_hotkey
+# =========================================================================== #
+
+@mcp.tool()
+def mouse_click(x: int, y: int, button: str = 'left') -> str:
+    """Click at (x, y) with a specific mouse button.
+
+    Desktop only.  Use ``tap`` for a simple left-click or for mobile sessions.
+    Supported buttons: left, middle, right.
+    """
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, DesktopSession):
+        return 'Error: mouse_click is only available for desktop sessions. Use tap instead.'
+    try:
+        btn = MouseButton(button.lower())
+    except ValueError:
+        return f"Error: Invalid button '{button}'. Use 'left', 'middle', or 'right'."
+
+    debug = get_debug_logger(_session.protocol)
+    step_dir = debug.log_step(
+        ActionType.CLICK, {'x': x, 'y': y, 'button': button}, _session,
+    )
+
+    _session.click(x, y, btn)
+
+    _notify('click', {'x': x, 'y': y, 'button': button})
+    debug.log_after(step_dir, _session)
+    return f"Clicked {button} at ({x}, {y}) (Debug: {step_dir})"
+
+
+@mcp.tool()
+def mouse_move(x: int, y: int) -> str:
+    """Move the mouse cursor to (x, y).  Desktop only."""
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, DesktopSession):
+        return 'Error: mouse_move is only available for desktop sessions.'
+
+    debug = get_debug_logger(_session.protocol)
+    step_dir = debug.log_step(ActionType.MOVE, {'x': x, 'y': y}, _session)
+
+    _session.move(x, y)
+
+    _notify('move', {'x': x, 'y': y})
+    debug.log_after(step_dir, _session)
+    return f"Moved mouse to ({x}, {y}) (Debug: {step_dir})"
+
+
+@mcp.tool()
+def mouse_scroll(clicks: int) -> str:
+    """Scroll the mouse wheel. Positive for up, negative for down.  Desktop only.
+
+    For mobile sessions use ``swipe`` instead.
+    """
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, DesktopSession):
+        return 'Error: mouse_scroll is only available for desktop sessions. Use swipe instead.'
+
+    debug = get_debug_logger(_session.protocol)
+    step_dir = debug.log_step(ActionType.SCROLL, {'clicks': clicks}, _session)
+
+    _session.scroll(clicks)
+
+    _notify('scroll', {'clicks': clicks})
+    debug.log_after(step_dir, _session)
+    return f"Scrolled {clicks} clicks (Debug: {step_dir})"
+
+
 @mcp.tool()
 def press_hotkey(keys: str) -> str:
     """Press a key combination simultaneously, e.g. 'ctrl+c', 'cmd+space', 'ctrl+shift+t'.
 
-    Separate keys with '+'. Use the same key names as pyautogui (e.g. ctrl, alt,
-    shift, cmd, win, enter, space, tab, esc, f1-f12, or any single character).
+    Desktop only.  Separate keys with '+'.
     """
     if not _session:
         return 'Error: No session active.'
+    if not isinstance(_session, DesktopSession):
+        return 'Error: press_hotkey is only available for desktop sessions.'
     key_list = [k.strip() for k in keys.split('+') if k.strip()]
     if not key_list:
         return 'Error: No keys provided.'
 
     debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(ActionType.KEY, {'key': keys}, _session)
+    step_dir = debug.log_step(ActionType.HOTKEY, {'keys': keys}, _session)
 
     _session.hotkey(*key_list)
 
@@ -249,12 +288,74 @@ def press_hotkey(keys: str) -> str:
     return f"Pressed hotkey: {keys} (Debug: {step_dir})"
 
 
+# =========================================================================== #
+# Mobile-only tools — swipe, long_press
+# =========================================================================== #
+
+@mcp.tool()
+def swipe(
+    x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300,
+) -> str:
+    """Swipe from (x1, y1) to (x2, y2) over *duration_ms* milliseconds.
+
+    Mobile only.  For desktop sessions use ``mouse_scroll`` instead.
+    """
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, MobileSession):
+        return 'Error: swipe is only available for mobile sessions. Use mouse_scroll instead.'
+
+    debug = get_debug_logger(_session.protocol)
+    step_dir = debug.log_step(
+        ActionType.SWIPE,
+        {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'duration_ms': duration_ms},
+        _session,
+    )
+
+    _session.swipe(x1, y1, x2, y2, duration_ms)
+
+    _notify(
+        'swipe', {
+            'x1': x1, 'y1': y1, 'x2': x2,
+            'y2': y2, 'duration_ms': duration_ms,
+        },
+    )
+    debug.log_after(step_dir, _session)
+    return f"Swiped ({x1},{y1}) -> ({x2},{y2}) in {duration_ms}ms (Debug: {step_dir})"
+
+
+@mcp.tool()
+def long_press(x: int, y: int, duration_ms: int = 500) -> str:
+    """Long-press at (x, y) for *duration_ms* milliseconds.  Mobile only."""
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, MobileSession):
+        return 'Error: long_press is only available for mobile sessions.'
+
+    debug = get_debug_logger(_session.protocol)
+    step_dir = debug.log_step(
+        ActionType.LONG_PRESS,
+        {'x': x, 'y': y, 'duration_ms': duration_ms},
+        _session,
+    )
+
+    _session.long_press(x, y, duration_ms)
+
+    _notify('long_press', {'x': x, 'y': y, 'duration_ms': duration_ms})
+    debug.log_after(step_dir, _session)
+    return f"Long-pressed at ({x}, {y}) for {duration_ms}ms (Debug: {step_dir})"
+
+
+# =========================================================================== #
+# Recording tools
+# =========================================================================== #
+
 @mcp.tool()
 def start_recording(output_path: str = 'recording.mp4', fps: int = 5, segment_seconds: int = 60) -> str:
     """Start a continuous screen recording of the remote desktop session.
 
     Recording is split into segment files (e.g. recording_0000.mp4,
-    recording_0001.mp4, …) so that data is written to disk incrementally
+    recording_0001.mp4, ...) so that data is written to disk incrementally
     rather than held entirely in memory.
 
     Args:
@@ -286,7 +387,7 @@ def start_recording(output_path: str = 'recording.mp4', fps: int = 5, segment_se
             fps=fps, segment_seconds=segment_seconds,
         )
         return (
-            f"Recording started → {Path(output_path).parent}/  "
+            f"Recording started -> {Path(output_path).parent}/  "
             f"(fps={fps}, segment={segment_seconds}s)\n"
             f"Trace: {_tracer.path if _tracer else 'n/a'}"
         )

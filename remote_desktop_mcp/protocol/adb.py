@@ -3,9 +3,8 @@ from typing import ClassVar
 
 import structlog
 
-from .base import GUISession
 from .base import Key
-from .base import MouseButton
+from .base import MobileSession
 
 logger = structlog.get_logger()
 
@@ -55,7 +54,7 @@ KEY_MAP = {
 }
 
 
-class ADBSession(GUISession):
+class ADBSession(MobileSession):
     protocol: ClassVar[str] = 'adb'
 
     serial: str | None
@@ -82,7 +81,6 @@ class ADBSession(GUISession):
             protocol='adb', serial=self.serial,
         )
         try:
-            # Check if device is connected and responsive
             res = self._run_adb(
                 ['shell', 'getprop', 'ro.product.model'], capture_output=True,
             )
@@ -97,7 +95,6 @@ class ADBSession(GUISession):
 
     def take_screenshot(self, output_path: str) -> None:
         logger.info('screenshot', protocol='adb', path=output_path)
-        # Using exec-out to pipe binary data directly to local file
         with open(output_path, 'wb') as f:
             subprocess.run(
                 self.adb_base + ['exec-out', 'screencap', '-p'],
@@ -106,41 +103,36 @@ class ADBSession(GUISession):
                 check=True,
             )
 
-    def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
-        logger.info('click', protocol='adb', x=x, y=y, button=button.value)
-        # ADB 'input tap' doesn't distinguish between left/right/middle buttons natively
+    def tap(self, x: int, y: int) -> None:
+        logger.info('tap', protocol='adb', x=x, y=y)
         self._run_adb(['shell', 'input', 'tap', str(x), str(y)])
 
-    def move(self, x: int, y: int) -> None:
-        logger.info('move', protocol='adb', x=x, y=y)
-        # Moving without clicking is tricky via basic 'input' command.
-        # We can use 'input mouse move' but it might not be supported on all versions.
-        # For compatibility, we do nothing or use a very fast swipe to self.
+    def swipe(
+        self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300,
+    ) -> None:
+        logger.info(
+            'swipe', protocol='adb',
+            x1=x1, y1=y1, x2=x2, y2=y2, duration_ms=duration_ms,
+        )
+        self._run_adb([
+            'shell', 'input', 'swipe',
+            str(x1), str(y1), str(x2), str(y2), str(duration_ms),
+        ])
 
-    def scroll(self, clicks: int) -> None:
-        logger.info('scroll', protocol='adb', clicks=clicks)
-        # Simulate scroll with swipe. Positive clicks = scroll up (swipe down).
-        # We assume a standard screen size for the swipe center.
-        # This is a heuristic.
-        duration = 300
-        if clicks > 0:
-            # Scroll up (Swipe down)
-            self._run_adb([
-                'shell', 'input', 'swipe', '500',
-                '400', '500', '800', str(duration),
-            ])
-        else:
-            # Scroll down (Swipe up)
-            self._run_adb([
-                'shell', 'input', 'swipe', '500',
-                '800', '500', '400', str(duration),
-            ])
+    def long_press(self, x: int, y: int, duration_ms: int = 500) -> None:
+        logger.info(
+            'long_press', protocol='adb',
+            x=x, y=y, duration_ms=duration_ms,
+        )
+        # Long press = swipe from a point to itself with a duration.
+        self._run_adb([
+            'shell', 'input', 'swipe',
+            str(x), str(y), str(x), str(y), str(duration_ms),
+        ])
 
     def type_text(self, text: str) -> None:
         logger.info('type_text', protocol='adb', text=text)
-        # ADB input text requires spaces to be %s
         safe_text = text.replace(' ', '%s')
-        # We might also need to escape other shell characters if they are complex.
         self._run_adb(['shell', 'input', 'text', f'"{safe_text}"'])
 
     def key_event(self, key: Key) -> None:
@@ -150,16 +142,3 @@ class ADBSession(GUISession):
             self._run_adb(['shell', 'input', 'keyevent', keycode])
         else:
             logger.warning('unsupported_key', key=key.value)
-
-    def hotkey(self, *keys: str) -> None:
-        logger.info('hotkey', protocol='adb', keys=list(keys))
-        # ADB doesn't easily support simultaneous key presses via simple shell commands.
-        # We will try to send them sequentially, but it likely won't work as a real hotkey.
-        for k in keys:
-            try:
-                # Try to map string to Key enum then to keycode
-                key_enum = Key(k.lower())
-                self.key_event(key_enum)
-            except ValueError:
-                # If it's a single char, we can try to type it or look up its keycode
-                self._run_adb(['shell', 'input', 'keyevent', k.upper()])

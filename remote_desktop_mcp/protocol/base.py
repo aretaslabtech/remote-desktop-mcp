@@ -58,6 +58,8 @@ class Key(Enum):
 
 
 class GUISession(ABC):
+    """Base class for all GUI automation sessions (desktop and mobile)."""
+
     protocol: ClassVar[str]
 
     @abstractmethod
@@ -73,8 +75,31 @@ class GUISession(ABC):
         """Capture a screenshot and save it to the specified path."""
 
     @abstractmethod
+    def tap(self, x: int, y: int) -> None:
+        """Tap at coordinates.  Desktop: left-click.  Mobile: touch."""
+
+    @abstractmethod
+    def type_text(self, text: str) -> None:
+        """Type the given text."""
+
+    @abstractmethod
+    def key_event(self, key: Key) -> None:
+        """Send a keyboard event."""
+
+
+class DesktopSession(GUISession):
+    """Session for desktop environments (mouse + keyboard).
+
+    Subclassed by Local, RDP, VNC, and Playwright backends.
+    """
+
+    def tap(self, x: int, y: int) -> None:
+        """Tap = left-click on desktop."""
+        self.click(x, y)
+
+    @abstractmethod
     def click(self, x: int, y: int, button: MouseButton = MouseButton.LEFT) -> None:
-        """Click at the specified coordinates."""
+        """Click at the specified coordinates with a given mouse button."""
 
     @abstractmethod
     def move(self, x: int, y: int) -> None:
@@ -85,13 +110,22 @@ class GUISession(ABC):
         """Scroll the mouse wheel. Positive for up, negative for down."""
 
     @abstractmethod
-    def type_text(self, text: str) -> None:
-        """Type the given text."""
-
-    @abstractmethod
-    def key_event(self, key: Key) -> None:
-        """Send a keyboard event."""
-
-    @abstractmethod
     def hotkey(self, *keys: str) -> None:
         """Press a combination of keys simultaneously (e.g. 'ctrl', 'c')."""
+
+
+class MobileSession(GUISession):
+    """Session for mobile / touch-screen environments.
+
+    Subclassed by the ADB backend.
+    """
+
+    @abstractmethod
+    def swipe(
+        self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300,
+    ) -> None:
+        """Swipe from (x1, y1) to (x2, y2) over *duration_ms* milliseconds."""
+
+    @abstractmethod
+    def long_press(self, x: int, y: int, duration_ms: int = 500) -> None:
+        """Long-press at the specified coordinates."""

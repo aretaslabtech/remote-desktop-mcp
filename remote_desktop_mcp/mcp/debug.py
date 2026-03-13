@@ -12,12 +12,19 @@ logger = structlog.get_logger()
 
 
 class ActionType(Enum):
-    CLICK = 'click'
-    MOVE = 'move'
-    SCROLL = 'scroll'
+    # Common
+    TAP = 'tap'
     TYPE = 'type'
     KEY = 'key'
     SCREENSHOT = 'screenshot'
+    # Desktop
+    CLICK = 'click'
+    MOVE = 'move'
+    SCROLL = 'scroll'
+    HOTKEY = 'hotkey'
+    # Mobile
+    SWIPE = 'swipe'
+    LONG_PRESS = 'long_press'
 
 
 class DebugLogger:
@@ -54,15 +61,23 @@ class DebugLogger:
         self.step_count += 1
         base = f"{self.step_count:03d}_{action_type.value}"
 
-        if action_type == ActionType.CLICK:
-            suffix = f"_x{params.get('x')}_y{params.get('y')}_{params.get('button')}"
-        elif action_type == ActionType.MOVE:
+        if action_type in (ActionType.CLICK, ActionType.TAP):
             suffix = f"_x{params.get('x')}_y{params.get('y')}"
+            if action_type == ActionType.CLICK:
+                suffix += f"_{params.get('button', 'left')}"
+        elif action_type in (ActionType.MOVE, ActionType.LONG_PRESS):
+            suffix = f"_x{params.get('x')}_y{params.get('y')}"
+        elif action_type == ActionType.SWIPE:
+            suffix = (
+                f"_x{params.get('x1')}_y{params.get('y1')}"
+                f"_to_x{params.get('x2')}_y{params.get('y2')}"
+            )
         elif action_type == ActionType.TYPE:
             text = str(params.get('text', ''))[:15].replace(' ', '_')
             suffix = f"_{text}"
-        elif action_type == ActionType.KEY:
-            suffix = f"_{params.get('key')}"
+        elif action_type in (ActionType.KEY, ActionType.HOTKEY):
+            key_str = params.get('key', params.get('keys', ''))
+            suffix = f"_{key_str}"
         elif action_type == ActionType.SCROLL:
             suffix = f"_{params.get('clicks')}"
         else:
@@ -95,8 +110,8 @@ class DebugLogger:
         except Exception as e:
             logger.error('debug_screenshot_failed', error=str(e))
 
-        # 3. Mark action
-        if action_type == ActionType.CLICK and 'x' in params and 'y' in params:
+        # 3. Mark action on the screenshot
+        if action_type in (ActionType.CLICK, ActionType.TAP) and 'x' in params and 'y' in params:
             self._mark_click(
                 before_path, params['x'], params['y'], params.get(
                     'button', 'left',
@@ -105,6 +120,18 @@ class DebugLogger:
         elif action_type == ActionType.MOVE and 'x' in params and 'y' in params:
             self._mark_move(
                 before_path, params['x'], params['y'], step_dir / 'marked.png',
+            )
+        elif action_type == ActionType.LONG_PRESS and 'x' in params and 'y' in params:
+            self._mark_click(
+                before_path, params['x'], params['y'], 'long_press',
+                step_dir / 'marked.png',
+            )
+        elif action_type == ActionType.SWIPE:
+            self._mark_swipe(
+                before_path,
+                params.get('x1', 0), params.get('y1', 0),
+                params.get('x2', 0), params.get('y2', 0),
+                step_dir / 'marked.png',
             )
 
         return step_dir
@@ -123,7 +150,12 @@ class DebugLogger:
                 return
             with Image.open(img_path) as img:
                 draw = ImageDraw.Draw(img)
-                color = 'red' if button == 'left' else 'blue' if button == 'right' else 'green'
+                color = {
+                    'left': 'red',
+                    'right': 'blue',
+                    'middle': 'green',
+                    'long_press': 'orange',
+                }.get(button, 'red')
                 r = 15
                 # Outer circle
                 draw.ellipse(
@@ -156,6 +188,30 @@ class DebugLogger:
                 # Just a crosshair for move
                 draw.line((x - r, y, x + r, y), fill=color, width=2)
                 draw.line((x, y - r, x, y + r), fill=color, width=2)
+                img.save(output_path)
+        except Exception:
+            pass
+
+    def _mark_swipe(
+        self, img_path: Path,
+        x1: int, y1: int, x2: int, y2: int,
+        output_path: Path,
+    ):
+        try:
+            if not img_path.exists():
+                return
+            with Image.open(img_path) as img:
+                draw = ImageDraw.Draw(img)
+                color = 'cyan'
+                # Start dot
+                draw.ellipse((x1 - 6, y1 - 6, x1 + 6, y1 + 6), fill=color)
+                # Arrow line
+                draw.line((x1, y1, x2, y2), fill=color, width=3)
+                # End arrow head (simple triangle)
+                draw.ellipse(
+                    (x2 - 4, y2 - 4, x2 + 4, y2 + 4),
+                    fill=color, outline='white',
+                )
                 img.save(output_path)
         except Exception:
             pass
