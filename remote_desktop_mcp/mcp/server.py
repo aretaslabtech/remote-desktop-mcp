@@ -1,9 +1,12 @@
 import atexit
+import base64
 import signal
 from pathlib import Path
 
 import structlog
 from fastmcp import FastMCP
+from mcp.types import ImageContent
+from mcp.types import TextContent
 
 from ..protocol.base import GUISession
 from ..protocol.base import Key
@@ -89,10 +92,10 @@ def _notify(action_type: str, params: dict) -> None:
 
 
 @mcp.tool()
-def take_screenshot(output_path: str = 'screenshot.png') -> str:
+def take_screenshot(output_path: str = 'screenshot.png') -> list[TextContent | ImageContent]:
     """Capture a screenshot of the remote desktop."""
     if not _session:
-        return 'Error: No session active.'
+        return [TextContent(type='text', text='Error: No session active.')]
 
     # Debug logging
     debug = get_debug_logger(_session.protocol)
@@ -106,7 +109,16 @@ def take_screenshot(output_path: str = 'screenshot.png') -> str:
 
     _notify('screenshot', {'output_path': output_path})
     debug.log_after(step_dir, _session)
-    return f"Screenshot saved to {output_path} (Debug: {step_dir})"
+
+    image_data = base64.standard_b64encode(
+        Path(output_path).read_bytes(),
+    ).decode()
+    return [
+        TextContent(
+            type='text', text=f"Screenshot saved to {output_path} (Debug: {step_dir})",
+        ),
+        ImageContent(type='image', data=image_data, mimeType='image/png'),
+    ]
 
 
 @mcp.tool()
