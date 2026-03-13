@@ -49,7 +49,7 @@ def set_session(session: GUISession, record: bool = False) -> None:
 
     # Optionally start raw screen recording (annotation-free).
     if record:
-        output_path = str(debug.session_dir / 'recording.mp4')
+        output_path = str(debug.recordings_dir / 'recording.mp4')
         _recorder = ScreenRecorder()
         try:
             _recorder.start(session, output_path=output_path, fps=5)
@@ -71,20 +71,47 @@ def set_session(session: GUISession, record: bool = False) -> None:
 def teardown() -> None:
     """Stop recording, close the trace, and save both files.  Call before session.stop()."""
     global _recorder, _tracer
+    session_dir = None
     if _recorder is not None and _recorder.is_running:
         try:
-            path = _recorder.stop()
-            logger.info('auto_recording_saved', path=str(path))
+            # We assume output_dir is within the session_dir
+            out_dir = _recorder.stop()
+            session_dir = out_dir.parent
+            logger.info('auto_recording_saved', path=str(out_dir))
         except Exception as exc:
             logger.warning('auto_recording_stop_failed', error=str(exc))
         _recorder = None
+
+    trace_path = None
     if _tracer is not None:
         try:
+            trace_path = _tracer.path
             _tracer.close()
-            logger.info('trace_closed', path=str(_tracer.path))
+            logger.info('trace_closed', path=str(trace_path))
         except Exception as exc:
             logger.warning('trace_close_failed', error=str(exc))
         _tracer = None
+
+    # Automatically generate annotated video if we have both recording and trace
+    if session_dir and trace_path:
+        try:
+            from .annotate import run_annotate
+            video_dir = session_dir / 'recordings'
+            output_path = session_dir / 'annotated.mp4'
+            logger.info('auto_annotation_started', session=session_dir.name)
+            run_annotate(
+                video_path=video_dir,
+                trace_path=trace_path,
+                output_path=output_path,
+            )
+            logger.info('auto_annotation_finished', output=str(output_path))
+        except ImportError:
+            logger.warning(
+                'auto_annotation_skipped',
+                reason='imageio/numpy not installed',
+            )
+        except Exception as exc:
+            logger.warning('auto_annotation_failed', error=str(exc))
 
 
 def _notify(action_type: str, params: dict) -> None:

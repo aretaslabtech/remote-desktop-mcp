@@ -15,24 +15,28 @@ Features
 Usage::
 
     remote-desktop-mcp annotate \\
-        --video  .logs/sessions/20260310_233748_rdp/ \\
+        --video  .logs/sessions/20260310_233748_rdp/recordings/ \\
         --trace  .logs/sessions/20260310_233748_rdp/trace.jsonl \\
-        --output annotated.mp4
+        --output .logs/sessions/20260310_233748_rdp/annotated.mp4
 """
 from __future__ import annotations
 
 import bisect
 import json
+import time as _time
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 from typing import Annotated
 from typing import Any
 
+import structlog
 import typer
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
+
+logger = structlog.get_logger(__name__)
 
 app = typer.Typer(
     help='Render an annotated replay from a raw recording + JSONL trace.',
@@ -59,17 +63,23 @@ _UI_ACTIONS: frozenset[str] = frozenset({
 @app.command()
 def annotate(
     video: Annotated[
-        Path,
+        Path | None,
         typer.Option(help='Raw recording file or segment directory.'),
-    ],
+    ] = None,
     trace: Annotated[
-        Path,
+        Path | None,
         typer.Option(help='JSONL trace file path.'),
-    ],
+    ] = None,
+    session_id: Annotated[
+        str | None,
+        typer.Option(
+            help='Session ID to annotate (automatically finds video and trace).',
+        ),
+    ] = None,
     output: Annotated[
-        Path,
+        Path | None,
         typer.Option(help='Output annotated MP4 path.'),
-    ] = Path('annotated.mp4'),
+    ] = None,
     ttl: Annotated[
         float,
         typer.Option(help='Seconds each annotation stays visible.'),
@@ -88,6 +98,39 @@ def annotate(
     ] = 1.0,
 ) -> None:
     """Combine a raw screen recording with a JSONL trace to produce an annotated video."""
+    if session_id:
+        # Try to find the session directory
+        log_root = Path('.logs/sessions')
+        session_dir = log_root / session_id
+        if not session_dir.exists():
+            # Try as absolute path or relative to current dir
+            session_dir = Path(session_id)
+
+        if not session_dir.exists():
+            typer.echo(
+                f'Error: session directory not found: {session_id}', err=True,
+            )
+            raise typer.Exit(1)
+
+        if trace is None:
+            trace = session_dir / 'trace.jsonl'
+        if video is None:
+            video = session_dir / 'recordings'
+            if not video.exists():
+                # Fallback to legacy structure
+                video = session_dir
+        if output is None:
+            output = session_dir / 'annotated.mp4'
+
+    if video is None or trace is None:
+        typer.echo(
+            'Error: either --session-id or both --video and --trace must be provided.', err=True,
+        )
+        raise typer.Exit(1)
+
+    if output is None:
+        output = Path('annotated.mp4')
+
     if not video.exists():
         typer.echo(f'Error: video path not found: {video}', err=True)
         raise typer.Exit(1)
@@ -96,31 +139,56 @@ def annotate(
         raise typer.Exit(1)
 
     try:
+        run_annotate(
+            video_path=video,
+            trace_path=trace,
+            output_path=output,
+            ttl=ttl,
+            idle_seconds=idle_seconds,
+            speed=speed,
+        )
+    except Exception as e:
+        typer.echo(f'Error during annotation: {e}', err=True)
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(1)
+
+
+def run_annotate(
+    video_path: Path,
+    trace_path: Path,
+    output_path: Path,
+    ttl: float = _DEFAULT_TTL,
+    idle_seconds: float = _DEFAULT_IDLE_SECONDS,
+    speed: float = 1.0,
+) -> Path:
+    """Core logic to produce an annotated video. Can be called from CLI or programmatically."""
+    try:
         import imageio  # type: ignore[import-untyped]
         import numpy as np
     except ImportError:
-        typer.echo(
-            'Error: imageio and numpy are required.  '
-            'Run: uv add imageio imageio-ffmpeg numpy',
-            err=True,
+        raise ImportError(
+            'imageio and numpy are required. Run: uv add imageio imageio-ffmpeg numpy',
         )
-        raise typer.Exit(1)
 
     session_start, session_end, fps_hint, actions, session_meta = _load_trace(
-        trace,
+        trace_path,
     )
-    segments = _collect_segments(video, fps_hint)
+    segments = _collect_segments(video_path, fps_hint)
     if not segments:
-        typer.echo('Error: no video segments found.', err=True)
-        raise typer.Exit(1)
+        raise ValueError(f'No video segments found in {video_path}')
 
     fps = segments[0][1].get('fps', fps_hint)
     total_segments = len(segments)
     speed = max(1.0, speed)   # guard: must be >= 1
     global_step = max(1, round(speed))   # keep every Nth frame
-    typer.echo(
-        f'segments={total_segments}  fps={fps}  '
-        f'actions={len(actions)}  idle_seconds={idle_seconds}s  speed={speed:.1f}×',
+
+    logger.info(
+        'starting_annotation',
+        segments=total_segments,
+        fps=fps,
+        actions=len(actions),
+        output=str(output_path),
     )
 
     active_intervals = _build_active_intervals(
@@ -131,7 +199,7 @@ def annotate(
     first_reader: Any = imageio.get_reader(str(segments[0][0]))
     first_frame = next(iter(first_reader))
     first_reader.close()
-    import numpy as np  # noqa: F811
+
     fh, fw = np.asarray(first_frame).shape[:2]
     fw = fw - fw % 2
     fh = fh - fh % 2
@@ -147,16 +215,11 @@ def annotate(
             ttl if actions else session_start + 1.0
         )
 
-    # ------------------------------------------------------------------ #
-    # Timing + size stats
-    # ------------------------------------------------------------------ #
-    import time as _time
-    t_start = _time.monotonic()
-    input_size = _total_size(video)
+    input_size = _total_size(video_path)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     writer: Any = imageio.get_writer(
-        str(output), fps=fps, macro_block_size=None,
+        str(output_path), fps=fps, macro_block_size=None,
     )
 
     _SKIP_META_KEYS = {
@@ -184,12 +247,15 @@ def annotate(
         'action_timestamps': action_timestamps,
     }
 
+    t_start = _time.monotonic()
     try:
         for seg_idx, (seg_path, seg_meta) in enumerate(segments):
             seg_start: float = seg_meta.get('start_time', session_start)
-            typer.echo(
-                f'  segment {seg_idx + 1}/{total_segments}: {seg_path.name}',
+            logger.info(
+                'processing_segment', current=seg_idx + 1,
+                total=total_segments, path=seg_path.name,
             )
+
             reader: Any = imageio.get_reader(str(seg_path))
 
             for frame_idx, frame_array in enumerate(reader):
@@ -231,20 +297,15 @@ def annotate(
         writer.close()
 
     t_elapsed = _time.monotonic() - t_start
-    output_size = output.stat().st_size if output.exists() else 0
-    typer.echo(
-        f'Annotated video saved to: {output}\n'
-        f'  Input size:  {_fmt_size(input_size)}',
+    output_size = output_path.stat().st_size if output_path.exists() else 0
+    logger.info(
+        'annotation_complete',
+        output=str(output_path),
+        input_size=_fmt_size(input_size),
+        output_size=_fmt_size(output_size),
+        processing_time=_fmt_duration(t_elapsed),
     )
-    typer.echo(
-        f'  Output size: {_fmt_size(output_size)}'
-        f'  ({output_size / max(input_size, 1) * 100:.1f}% of input)',
-    )
-    typer.echo(
-        f'  Source duration: {_fmt_duration(dur_s)}'
-        f'  →  Output duration: ~{_fmt_duration(_estimate_output_duration(dur_s, active_intervals, idle_seconds) / speed)}',
-    )
-    typer.echo(f'  Processing time: {_fmt_duration(t_elapsed)}')
+    return output_path
 
 
 # =========================================================================== #
@@ -374,6 +435,8 @@ def _idle_frame_decision(
     span_duration = max(span_end - span_start, 1.0 / fps)
     span_frames = max(1, round(span_duration * fps))
     target_frames = max(1, round(idle_seconds * fps))
+    if target_frames <= 0:
+        return False, ''
     step = max(1, round(span_frames / target_frames))
 
     frame_offset = round((ts - span_start) * fps)

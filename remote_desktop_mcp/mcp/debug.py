@@ -37,7 +37,14 @@ class DebugLogger:
         self.session_id = f"{timestamp}_{protocol}"
         self.session_dir = self.sessions_dir / self.session_id
 
+        # New structured layout
+        self.steps_dir = self.session_dir / 'steps'
+        self.recordings_dir = self.session_dir / 'recordings'
+
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        self.steps_dir.mkdir(parents=True, exist_ok=True)
+        self.recordings_dir.mkdir(parents=True, exist_ok=True)
+
         self.step_count = 0
 
         self._update_latest_link()
@@ -90,7 +97,7 @@ class DebugLogger:
     def log_step(self, action_type: ActionType, params: dict, session):
         """Log a single step with screenshots and metadata."""
         step_name = self._get_step_name(action_type, params)
-        step_dir = self.session_dir / step_name
+        step_dir = self.steps_dir / step_name
         step_dir.mkdir(parents=True, exist_ok=True)
 
         # 1. Metadata
