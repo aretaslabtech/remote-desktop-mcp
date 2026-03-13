@@ -35,3 +35,13 @@ gemini mcp add remote-desktop-vnc \
     -e REMOTE_DESKTOP_VNC_PASSWORD=password \
     uvx remote-desktop-mcp mcp vnc
 ```
+
+You can enable video record via adding `--record`, then check `.logs/session/` folder after the agent stopped.
+
+```bash
+gemini mcp add remote-desktop-rdp \
+    -e REMOTE_DESKTOP_RDP_HOST=10.134.179.153 \
+    -e REMOTE_DESKTOP_RDP_USER=ubuntu \
+    -e REMOTE_DESKTOP_RDP_PASSWORD=ubuntu \
+    uvx remote-desktop-mcp mcp rdp --record
+```
