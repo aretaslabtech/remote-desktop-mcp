@@ -95,3 +95,8 @@ class LocalSession(DesktopSession):
         self._set_display_env()
         import pyautogui
         pyautogui.hotkey(*keys)
+
+    def get_screen_size(self) -> tuple[int, int]:
+        with mss(display=self.display_num) as sct:
+            monitor = sct.monitors[1]
+            return monitor['width'], monitor['height']

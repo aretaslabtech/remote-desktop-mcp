@@ -111,26 +111,31 @@ class DebugLogger:
             logger.error('debug_screenshot_failed', error=str(e))
 
         # 3. Mark action on the screenshot
-        if action_type in (ActionType.CLICK, ActionType.TAP) and 'x' in params and 'y' in params:
+        ax = params.get('actual_x', params.get('x'))
+        ay = params.get('actual_y', params.get('y'))
+        ax1 = params.get('actual_x1', params.get('x1'))
+        ay1 = params.get('actual_y1', params.get('y1'))
+        ax2 = params.get('actual_x2', params.get('x2'))
+        ay2 = params.get('actual_y2', params.get('y2'))
+
+        if action_type in (ActionType.CLICK, ActionType.TAP) and ax is not None and ay is not None:
             self._mark_click(
-                before_path, params['x'], params['y'], params.get(
+                before_path, ax, ay, params.get(
                     'button', 'left',
                 ), step_dir / 'marked.png',
             )
-        elif action_type == ActionType.MOVE and 'x' in params and 'y' in params:
+        elif action_type == ActionType.MOVE and ax is not None and ay is not None:
             self._mark_move(
-                before_path, params['x'], params['y'], step_dir / 'marked.png',
+                before_path, ax, ay, step_dir / 'marked.png',
             )
-        elif action_type == ActionType.LONG_PRESS and 'x' in params and 'y' in params:
+        elif action_type == ActionType.LONG_PRESS and ax is not None and ay is not None:
             self._mark_click(
-                before_path, params['x'], params['y'], 'long_press',
+                before_path, ax, ay, 'long_press',
                 step_dir / 'marked.png',
             )
-        elif action_type == ActionType.SWIPE:
+        elif action_type == ActionType.SWIPE and ax1 is not None and ay1 is not None and ax2 is not None and ay2 is not None:
             self._mark_swipe(
-                before_path,
-                params.get('x1', 0), params.get('y1', 0),
-                params.get('x2', 0), params.get('y2', 0),
+                before_path, ax1, ay1, ax2, ay2,
                 step_dir / 'marked.png',
             )
 

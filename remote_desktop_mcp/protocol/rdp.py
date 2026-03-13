@@ -142,3 +142,7 @@ class RDPSession(DesktopSession):
         self._set_display_env()
         import pyautogui
         pyautogui.hotkey(*keys)
+
+    def get_screen_size(self) -> tuple[int, int]:
+        res_parts = self.resolution.split('x')
+        return int(res_parts[0]), int(res_parts[1])

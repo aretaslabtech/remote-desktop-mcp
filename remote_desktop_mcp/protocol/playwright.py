@@ -170,3 +170,6 @@ class PlaywrightSession(DesktopSession):
                     mapped_keys.append(k)
 
             self._page.keyboard.press('+'.join(mapped_keys))
+
+    def get_screen_size(self) -> tuple[int, int]:
+        return self.width, self.height

@@ -499,7 +499,7 @@ def _render_annotations(img: Image.Image, active: list[tuple[dict, float]], ttl:
 
 
 def _draw_click(draw: ImageDraw.ImageDraw, params: dict, alpha: int, alpha_f: float) -> None:
-    x, y = params.get('x', 0), params.get('y', 0)
+    x, y = _get_coords(params)
     button = params.get('button', 'left')
     color = {
         'left': (255, 50, 50, alpha),
@@ -517,7 +517,7 @@ def _draw_click(draw: ImageDraw.ImageDraw, params: dict, alpha: int, alpha_f: fl
 
 
 def _draw_move(draw: ImageDraw.ImageDraw, params: dict, alpha: int) -> None:
-    x, y = params.get('x', 0), params.get('y', 0)
+    x, y = _get_coords(params)
     c = (255, 220, 50, alpha)
     r = 14
     draw.line((x - r, y, x + r, y), fill=c, width=2)
@@ -539,8 +539,8 @@ def _draw_scroll(draw: ImageDraw.ImageDraw, size: tuple[int, int], params: dict,
 
 
 def _draw_swipe(draw: ImageDraw.ImageDraw, params: dict, alpha: int) -> None:
-    x1, y1 = params.get('x1', 0), params.get('y1', 0)
-    x2, y2 = params.get('x2', 0), params.get('y2', 0)
+    x1, y1 = _get_coords(params, ('x1', 'y1'))
+    x2, y2 = _get_coords(params, ('x2', 'y2'))
     c = (50, 220, 220, alpha)
     # Start dot
     draw.ellipse((x1 - 6, y1 - 6, x1 + 6, y1 + 6), fill=c)
@@ -566,7 +566,8 @@ def _draw_text_banner(img: Image.Image, action: str, params: dict, alpha_f: floa
         text = f'\u2328  Hotkey:  [ {params.get("keys", "").upper()} ]'
         bg, fg = (40, 20, 55), (200, 150, 255)
     elif action == 'long_press':
-        text = f'\u261e  Long press ({params.get("x", 0)}, {params.get("y", 0)}) {params.get("duration_ms", 500)}ms'
+        x, y = _get_coords(params)
+        text = f'\u261e  Long press ({x}, {y}) {params.get("duration_ms", 500)}ms'
         bg, fg = (50, 30, 0), (255, 180, 50)
     else:
         return img
@@ -590,19 +591,31 @@ def _draw_text_banner(img: Image.Image, action: str, params: dict, alpha_f: floa
 # Utilities
 # =========================================================================== #
 
+def _get_coords(params: dict, keys: tuple[str, str] = ('x', 'y')) -> tuple[int, int]:
+    """Prefer 'actual_x' and 'actual_y' if they exist in the trace, else fall back to 'x', 'y'."""
+    x_key, y_key = keys
+    actual_x = params.get(f'actual_{x_key}')
+    actual_y = params.get(f'actual_{y_key}')
+    if actual_x is not None and actual_y is not None:
+        return actual_x, actual_y
+    return params.get(x_key, 0), params.get(y_key, 0)
+
+
 def _fmt_action_short(rec: dict) -> str:
     """One-line summary of a trace action record."""
     action = rec.get('action', '?')
     params = rec.get('params', {})
     if action == 'tap':
-        return f'tap ({params.get("x", 0)}, {params.get("y", 0)})'
+        x, y = _get_coords(params)
+        return f'tap ({x}, {y})'
     if action == 'click':
+        x, y = _get_coords(params)
         btn = params.get('button', 'left')
         btn_sym = {
             'left': '\u2190', 'right': '\u2192',
             'middle': '\u2194',
         }.get(btn, btn)
-        return f'click {btn_sym} ({params.get("x", 0)}, {params.get("y", 0)})'
+        return f'click {btn_sym} ({x}, {y})'
     if action == 'type':
         t = params.get('text', '')
         if len(t) > 24:
@@ -616,14 +629,18 @@ def _fmt_action_short(rec: dict) -> str:
         direction = '\u2191' if params.get('clicks', 0) > 0 else '\u2193'
         return f'scroll {direction}{abs(params.get("clicks", 1))}'
     if action == 'move':
-        return f'move ({params.get("x", 0)}, {params.get("y", 0)})'
+        x, y = _get_coords(params)
+        return f'move ({x}, {y})'
     if action == 'swipe':
+        x1, y1 = _get_coords(params, ('x1', 'y1'))
+        x2, y2 = _get_coords(params, ('x2', 'y2'))
         return (
-            f'swipe ({params.get("x1", 0)},{params.get("y1", 0)})'
-            f'\u2192({params.get("x2", 0)},{params.get("y2", 0)})'
+            f'swipe ({x1},{y1})'
+            f'\u2192({x2},{y2})'
         )
     if action == 'long_press':
-        return f'long press ({params.get("x", 0)}, {params.get("y", 0)})'
+        x, y = _get_coords(params)
+        return f'long press ({x}, {y})'
     if action == 'screenshot':
         return 'screenshot'
     return action

@@ -93,6 +93,16 @@ def _notify(action_type: str, params: dict) -> None:
         _tracer.log_action(action_type, params)
 
 
+def _denormalize_coords(x: int, y: int) -> tuple[int, int]:
+    """Convert normalized (0-1000) coordinates to actual screen pixels."""
+    if not _session:
+        return x, y
+    width, height = _session.get_screen_size()
+    if width == 0 or height == 0:
+        return x, y
+    return round(x * width / 1000), round(y * height / 1000)
+
+
 # =========================================================================== #
 # Common tools — available on both desktop and mobile sessions
 # =========================================================================== #
@@ -130,20 +140,27 @@ def take_screenshot(output_path: str = 'screenshot.png') -> list[TextContent | I
 def tap(x: int, y: int) -> str:
     """Tap at the specified coordinates (x, y).
 
+    Coordinates are normalized (0-1000). (0,0) is top-left, (1000,1000) is bottom-right.
     On desktop sessions this is equivalent to a left-click.
     On mobile sessions this is a touch tap.
     """
     if not _session:
         return 'Error: No session active.'
 
+    nx, ny = _denormalize_coords(x, y)
     debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(ActionType.TAP, {'x': x, 'y': y}, _session)
+    step_dir = debug.log_step(
+        ActionType.TAP, {
+            'x': x, 'y': y,
+            'actual_x': nx, 'actual_y': ny,
+        }, _session,
+    )
 
-    _session.tap(x, y)
+    _session.tap(nx, ny)
 
-    _notify('tap', {'x': x, 'y': y})
+    _notify('tap', {'x': x, 'y': y, 'actual_x': nx, 'actual_y': ny})
     debug.log_after(step_dir, _session)
-    return f"Tapped at ({x}, {y}) (Debug: {step_dir})"
+    return f"Tapped at ({x}, {y}) [scaled to ({nx}, {ny})] (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -201,6 +218,7 @@ def press_key(key_name: str) -> str:
 def mouse_click(x: int, y: int, button: str = 'left') -> str:
     """Click at (x, y) with a specific mouse button.
 
+    Coordinates are normalized (0-1000). (0,0) is top-left, (1000,1000) is bottom-right.
     Desktop only.  Use ``tap`` for a simple left-click or for mobile sessions.
     Supported buttons: left, middle, right.
     """
@@ -213,34 +231,53 @@ def mouse_click(x: int, y: int, button: str = 'left') -> str:
     except ValueError:
         return f"Error: Invalid button '{button}'. Use 'left', 'middle', or 'right'."
 
+    nx, ny = _denormalize_coords(x, y)
     debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(
-        ActionType.CLICK, {'x': x, 'y': y, 'button': button}, _session,
+        ActionType.CLICK, {
+            'x': x, 'y': y, 'button': button,
+            'actual_x': nx, 'actual_y': ny,
+        }, _session,
     )
 
-    _session.click(x, y, btn)
+    _session.click(nx, ny, btn)
 
-    _notify('click', {'x': x, 'y': y, 'button': button})
+    _notify(
+        'click', {
+            'x': x, 'y': y, 'button': button,
+            'actual_x': nx, 'actual_y': ny,
+        },
+    )
     debug.log_after(step_dir, _session)
-    return f"Clicked {button} at ({x}, {y}) (Debug: {step_dir})"
+    return f"Clicked {button} at ({x}, {y}) [scaled to ({nx}, {ny})] (Debug: {step_dir})"
 
 
 @mcp.tool()
 def mouse_move(x: int, y: int) -> str:
-    """Move the mouse cursor to (x, y).  Desktop only."""
+    """Move the mouse cursor to (x, y).
+
+    Coordinates are normalized (0-1000). (0,0) is top-left, (1000,1000) is bottom-right.
+    Desktop only.
+    """
     if not _session:
         return 'Error: No session active.'
     if not isinstance(_session, DesktopSession):
         return 'Error: mouse_move is only available for desktop sessions.'
 
+    nx, ny = _denormalize_coords(x, y)
     debug = get_debug_logger(_session.protocol)
-    step_dir = debug.log_step(ActionType.MOVE, {'x': x, 'y': y}, _session)
+    step_dir = debug.log_step(
+        ActionType.MOVE, {
+            'x': x, 'y': y,
+            'actual_x': nx, 'actual_y': ny,
+        }, _session,
+    )
 
-    _session.move(x, y)
+    _session.move(nx, ny)
 
-    _notify('move', {'x': x, 'y': y})
+    _notify('move', {'x': x, 'y': y, 'actual_x': nx, 'actual_y': ny})
     debug.log_after(step_dir, _session)
-    return f"Moved mouse to ({x}, {y}) (Debug: {step_dir})"
+    return f"Moved mouse to ({x}, {y}) [scaled to ({nx}, {ny})] (Debug: {step_dir})"
 
 
 @mcp.tool()
@@ -298,6 +335,7 @@ def swipe(
 ) -> str:
     """Swipe from (x1, y1) to (x2, y2) over *duration_ms* milliseconds.
 
+    Coordinates are normalized (0-1000). (0,0) is top-left, (1000,1000) is bottom-right.
     Mobile only.  For desktop sessions use ``mouse_scroll`` instead.
     """
     if not _session:
@@ -305,45 +343,63 @@ def swipe(
     if not isinstance(_session, MobileSession):
         return 'Error: swipe is only available for mobile sessions. Use mouse_scroll instead.'
 
+    nx1, ny1 = _denormalize_coords(x1, y1)
+    nx2, ny2 = _denormalize_coords(x2, y2)
     debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(
         ActionType.SWIPE,
-        {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'duration_ms': duration_ms},
+        {
+            'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+            'duration_ms': duration_ms,
+            'actual_x1': nx1, 'actual_y1': ny1,
+            'actual_x2': nx2, 'actual_y2': ny2,
+        },
         _session,
     )
 
-    _session.swipe(x1, y1, x2, y2, duration_ms)
+    _session.swipe(nx1, ny1, nx2, ny2, duration_ms)
 
     _notify(
         'swipe', {
             'x1': x1, 'y1': y1, 'x2': x2,
             'y2': y2, 'duration_ms': duration_ms,
+            'actual_x1': nx1, 'actual_y1': ny1,
+            'actual_x2': nx2, 'actual_y2': ny2,
         },
     )
     debug.log_after(step_dir, _session)
-    return f"Swiped ({x1},{y1}) -> ({x2},{y2}) in {duration_ms}ms (Debug: {step_dir})"
+    return f"Swiped ({x1},{y1}) -> ({x2},{y2}) [scaled to ({nx1},{ny1}) -> ({nx2},{ny2})] in {duration_ms}ms (Debug: {step_dir})"
 
 
 @mcp.tool()
 def long_press(x: int, y: int, duration_ms: int = 500) -> str:
-    """Long-press at (x, y) for *duration_ms* milliseconds.  Mobile only."""
+    """Long-press at (x, y) for *duration_ms* milliseconds.
+
+    Coordinates are normalized (0-1000). (0,0) is top-left, (1000,1000) is bottom-right.
+    Mobile only.
+    """
     if not _session:
         return 'Error: No session active.'
     if not isinstance(_session, MobileSession):
         return 'Error: long_press is only available for mobile sessions.'
 
+    nx, ny = _denormalize_coords(x, y)
     debug = get_debug_logger(_session.protocol)
     step_dir = debug.log_step(
         ActionType.LONG_PRESS,
-        {'x': x, 'y': y, 'duration_ms': duration_ms},
+        {'x': x, 'y': y, 'duration_ms': duration_ms, 'actual_x': nx, 'actual_y': ny},
         _session,
     )
 
-    _session.long_press(x, y, duration_ms)
+    _session.long_press(nx, ny, duration_ms)
 
-    _notify('long_press', {'x': x, 'y': y, 'duration_ms': duration_ms})
+    _notify(
+        'long_press', {
+            'x': x, 'y': y, 'duration_ms': duration_ms, 'actual_x': nx, 'actual_y': ny,
+        },
+    )
     debug.log_after(step_dir, _session)
-    return f"Long-pressed at ({x}, {y}) for {duration_ms}ms (Debug: {step_dir})"
+    return f"Long-pressed at ({x}, {y}) [scaled to ({nx}, {ny})] for {duration_ms}ms (Debug: {step_dir})"
 
 
 # =========================================================================== #

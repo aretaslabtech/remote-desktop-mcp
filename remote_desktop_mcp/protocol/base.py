@@ -86,6 +86,10 @@ class GUISession(ABC):
     def key_event(self, key: Key) -> None:
         """Send a keyboard event."""
 
+    @abstractmethod
+    def get_screen_size(self) -> tuple[int, int]:
+        """Get the current screen resolution (width, height)."""
+
 
 class DesktopSession(GUISession):
     """Session for desktop environments (mouse + keyboard).

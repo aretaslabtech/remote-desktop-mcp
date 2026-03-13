@@ -142,3 +142,12 @@ class ADBSession(MobileSession):
             self._run_adb(['shell', 'input', 'keyevent', keycode])
         else:
             logger.warning('unsupported_key', key=key.value)
+
+    def get_screen_size(self) -> tuple[int, int]:
+        res = self._run_adb(['shell', 'wm', 'size'], capture_output=True)
+        # Output is like "Physical size: 1080x1920" or "Physical size: 1080x1920\nOverride size: 720x1280"
+        lines = res.stdout.strip().splitlines()
+        last_line = lines[-1]
+        size_str = last_line.split(':')[-1].strip()
+        w, h = map(int, size_str.split('x'))
+        return w, h

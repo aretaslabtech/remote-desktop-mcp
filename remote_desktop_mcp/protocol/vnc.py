@@ -80,3 +80,8 @@ class VNCSession(DesktopSession):
                 self.client.keyDown(k)
             for k in reversed(keys):
                 self.client.keyUp(k)
+
+    def get_screen_size(self) -> tuple[int, int]:
+        if not self.client:
+            return 0, 0
+        return self.client.screen.width, self.client.screen.height
