@@ -97,6 +97,12 @@ class DesktopSession(GUISession):
     Subclassed by Local, RDP, VNC, and Playwright backends.
     """
 
+    #: Whether this backend supports reading/writing the remote clipboard.
+    #: Defaults to False so backends with no equivalent support (VNC, ADB,
+    #: Playwright, Local) need no changes; only backends that implement
+    #: ``read_clipboard``/``write_clipboard`` override this to True.
+    supports_clipboard: ClassVar[bool] = False
+
     def tap(self, x: int, y: int) -> None:
         """Tap = left-click on desktop."""
         self.click(x, y)

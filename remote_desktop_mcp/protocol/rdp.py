@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -11,6 +12,80 @@ from .base import Key
 from .base import MouseButton
 
 logger = structlog.get_logger()
+
+_CLIPBOARD_BINARY = 'xclip'
+
+
+class ClipboardError(RuntimeError):
+    """Raised when the X11 clipboard backend cannot be used."""
+
+
+class ClipboardBackend:
+    """Reads/writes the X11 clipboard by shelling out to ``xclip``.
+
+    Deliberately avoids a Python clipboard dependency: FreeRDP's
+    ``+clipboard`` channel already syncs the X11 ``CLIPBOARD`` selection of
+    whatever display it is pointed at with the Windows clipboard, so this
+    class only needs to read/write that X11 selection on the Xvfb display
+    owned by the RDP session. The ``DISPLAY`` value is always passed
+    explicitly to the subprocess (never inherited from the ambient process
+    environment), so it talks to the correct Xvfb display even if the
+    MCP server process itself has a different (or no) ``DISPLAY`` set.
+    """
+
+    def __init__(self, display: str) -> None:
+        self.display = display
+
+    def _require_available(self) -> None:
+        if shutil.which(_CLIPBOARD_BINARY) is None:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' is unavailable.",
+            )
+
+    def _env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        env['DISPLAY'] = self.display
+        return env
+
+    def read_text(self) -> str:
+        self._require_available()
+        try:
+            result = subprocess.run(
+                [_CLIPBOARD_BINARY, '-selection', 'clipboard', '-o'],
+                env=self._env(),
+                capture_output=True,
+                check=True,
+            )
+        except FileNotFoundError as exc:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' is unavailable.",
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' failed to read "
+                'the clipboard.',
+            ) from exc
+        return result.stdout.decode('utf-8', errors='replace')
+
+    def write_text(self, text: str) -> None:
+        self._require_available()
+        try:
+            subprocess.run(
+                [_CLIPBOARD_BINARY, '-selection', 'clipboard'],
+                input=text.encode('utf-8'),
+                env=self._env(),
+                capture_output=True,
+                check=True,
+            )
+        except FileNotFoundError as exc:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' is unavailable.",
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' failed to write "
+                'to the clipboard.',
+            ) from exc
 
 
 def _validate_shared_dir(shared_dir: str) -> str:
@@ -45,6 +120,7 @@ def _validate_shared_dir(shared_dir: str) -> str:
 
 class RDPSession(DesktopSession):
     protocol = 'rdp'
+    supports_clipboard = True
 
     host: str
     user: str
@@ -77,12 +153,25 @@ class RDPSession(DesktopSession):
         self.shared_name = shared_name
         self.xvfb_proc = None
         self.rdp_proc = None
+        self._clipboard = ClipboardBackend(display=self.display_num)
+        # Populated on start(); a missing clipboard binary must never abort
+        # the RDP connection, so this stays None until start() runs the
+        # startup availability check.
+        self._clipboard_available: bool | None = None
 
     def _set_display_env(self) -> None:
         os.environ['DISPLAY'] = self.display_num
 
     def start(self) -> None:
         self._set_display_env()
+
+        self._clipboard_available = shutil.which(_CLIPBOARD_BINARY) is not None
+        if not self._clipboard_available:
+            logger.info(
+                'clipboard_unavailable', protocol='rdp',
+                binary=_CLIPBOARD_BINARY,
+            )
+
         logger.info('starting_xvfb', protocol='rdp', display=self.display_num)
         xvfb_cmd: list[str] = [
             'Xvfb', self.display_num,
@@ -198,3 +287,22 @@ class RDPSession(DesktopSession):
     def get_screen_size(self) -> tuple[int, int]:
         res_parts = self.resolution.split('x')
         return int(res_parts[0]), int(res_parts[1])
+
+    def read_clipboard(self) -> str:
+        """Read text from the X11 clipboard FreeRDP's ``+clipboard`` channel
+        syncs with the remote Windows clipboard.
+
+        Never logs the clipboard content, only its length.
+        """
+        text = self._clipboard.read_text()
+        logger.info('clipboard_read', protocol='rdp', length=len(text))
+        return text
+
+    def write_clipboard(self, text: str) -> None:
+        """Write text to the X11 clipboard FreeRDP's ``+clipboard`` channel
+        syncs with the remote Windows clipboard.
+
+        Never logs the clipboard content, only its length.
+        """
+        self._clipboard.write_text(text)
+        logger.info('clipboard_write', protocol='rdp', length=len(text))
