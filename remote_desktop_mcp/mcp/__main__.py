@@ -110,6 +110,20 @@ def mcp_rdp(
             envvar='REMOTE_DESKTOP_RESOLUTION',
         ),
     ] = '1280x720',
+    shared_dir: Annotated[
+        str | None,
+        typer.Option(
+            help='Local directory to share with the remote session via RDP drive redirection.',
+            envvar='REMOTE_DESKTOP_RDP_SHARED_DIR',
+        ),
+    ] = None,
+    shared_name: Annotated[
+        str,
+        typer.Option(
+            help='Name of the shared RDP drive exposed to the remote session.',
+            envvar='REMOTE_DESKTOP_RDP_SHARED_NAME',
+        ),
+    ] = 'shared',
     record: Annotated[
         bool,
         typer.Option(
@@ -125,6 +139,7 @@ def mcp_rdp(
     session = RDPSession(
         host=host, user=user, password=password,
         display_num=display, resolution=resolution,
+        shared_dir=shared_dir, shared_name=shared_name,
     )
     set_session(session, record=record)
     try:

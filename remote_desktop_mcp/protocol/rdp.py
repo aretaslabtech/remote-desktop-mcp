@@ -1,6 +1,7 @@
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import structlog
 from mss import mss
@@ -12,6 +13,36 @@ from .base import MouseButton
 logger = structlog.get_logger()
 
 
+def _validate_shared_dir(shared_dir: str) -> str:
+    """Validate and resolve a path requested for RDP drive redirection.
+
+    Expands ``~``, converts to an absolute path, resolves it, and ensures
+    the path exists, is a directory, and is not one of the locations that
+    must never be auto-shared over RDP (the filesystem root, the user's
+    home directory, the current working directory, or ``/tmp``).
+    """
+    resolved = Path(shared_dir).expanduser().resolve()
+
+    if not resolved.exists():
+        raise ValueError(f"RDP shared directory does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise ValueError(f"RDP shared directory is not a directory: {resolved}")
+
+    forbidden = {
+        Path('/').resolve(),
+        Path.home().resolve(),
+        Path.cwd().resolve(),
+        Path('/tmp').resolve(),
+    }
+    if resolved in forbidden:
+        raise ValueError(
+            'RDP shared directory must not be the filesystem root, the '
+            f"home directory, the current working directory, or /tmp: {resolved}",
+        )
+
+    return str(resolved)
+
+
 class RDPSession(DesktopSession):
     protocol = 'rdp'
 
@@ -20,6 +51,8 @@ class RDPSession(DesktopSession):
     password: str
     display_num: str
     resolution: str
+    shared_dir: str | None
+    shared_name: str
     xvfb_proc: subprocess.Popen[bytes] | None
     rdp_proc: subprocess.Popen[bytes] | None
 
@@ -30,12 +63,18 @@ class RDPSession(DesktopSession):
         password: str,
         display_num: str = ':99',
         resolution: str = '1280x720',
+        shared_dir: str | None = None,
+        shared_name: str = 'shared',
     ) -> None:
         self.host = host
         self.user = user
         self.password = password
         self.display_num = display_num
         self.resolution = resolution
+        self.shared_dir = (
+            _validate_shared_dir(shared_dir) if shared_dir is not None else None
+        )
+        self.shared_name = shared_name
         self.xvfb_proc = None
         self.rdp_proc = None
 
@@ -73,6 +112,8 @@ class RDPSession(DesktopSession):
             '/network:auto',
             '/gdi:sw',
         ]
+        if self.shared_dir is not None:
+            rdp_cmd.append(f"/drive:{self.shared_name},{self.shared_dir}")
         self.rdp_proc = subprocess.Popen(
             rdp_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
