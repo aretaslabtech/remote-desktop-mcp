@@ -234,6 +234,8 @@ class RDPSession(DesktopSession):
             '/bpp:24',
             '+clipboard',
             '/relax-order-checks',
+            # FreeRDP 3.x rejects the bare '/kbd:0x00000409' form (parse
+            # error -1002); it requires the structured 'layout:' prefix.
             '/kbd:layout:0x00000409',
             '+fonts',
             '+aero',
