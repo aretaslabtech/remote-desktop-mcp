@@ -13,6 +13,7 @@ from ..protocol.base import GUISession
 from ..protocol.base import Key
 from ..protocol.base import MobileSession
 from ..protocol.base import MouseButton
+from ..protocol.rdp import ClipboardError
 from .debug import ActionType
 from .debug import get_debug_logger
 from .recorder import ScreenRecorder
@@ -350,6 +351,66 @@ def press_hotkey(keys: str) -> str:
     _notify('hotkey', {'keys': keys})
     debug.log_after(step_dir, _session)
     return f"Pressed hotkey: {keys} (Debug: {step_dir})"
+
+
+# =========================================================================== #
+# Clipboard / shared-drive tools — desktop sessions that support clipboard
+# access (currently RDP only; gated via DesktopSession.supports_clipboard)
+# =========================================================================== #
+
+@mcp.tool()
+def clipboard_read() -> str:
+    """Read text from the clipboard of the active remote desktop session."""
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, DesktopSession) or not _session.supports_clipboard:
+        return 'Error: Clipboard is not supported by the active session.'
+
+    try:
+        text = _session.read_clipboard()
+    except ClipboardError as exc:
+        return f"Error: {exc}"
+
+    _notify('clipboard_read', {'length': len(text)})
+    return text
+
+
+@mcp.tool()
+def clipboard_write(text: str) -> str:
+    """Write text to the clipboard of the active remote desktop session."""
+    if not _session:
+        return 'Error: No session active.'
+    if not isinstance(_session, DesktopSession) or not _session.supports_clipboard:
+        return 'Error: Clipboard is not supported by the active session.'
+
+    try:
+        _session.write_clipboard(text)
+    except ClipboardError as exc:
+        return f"Error: {exc}"
+
+    _notify('clipboard_write', {'length': len(text)})
+    return 'Clipboard updated.'
+
+
+@mcp.tool()
+def shared_drive_info() -> dict:
+    """Report the active RDP session's shared-drive configuration."""
+    if not isinstance(_session, DesktopSession):
+        return {'enabled': False}
+
+    shared_dir = getattr(_session, 'shared_dir', None)
+    if not shared_dir:
+        return {'enabled': False}
+
+    shared_name = getattr(_session, 'shared_name', 'shared')
+    info = {
+        'enabled': True,
+        'name': shared_name,
+        'local_path': shared_dir,
+        'windows_path': f"\\\\tsclient\\{shared_name}",
+    }
+    _notify('shared_drive_info', info)
+    return info
 
 
 # =========================================================================== #
