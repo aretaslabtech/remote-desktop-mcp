@@ -83,11 +83,18 @@ class ClipboardBackend:
     def write_text(self, text: str) -> None:
         self._require_available()
         try:
+            # xclip forks a long-lived background process to keep serving
+            # the clipboard selection after this call returns; that
+            # daemonized child inherits any stdout/stderr pipe we give it
+            # and holds it open indefinitely, so subprocess.run() would
+            # never see EOF and would always hit the timeout below even on
+            # success if we captured output here. Discard it instead.
             subprocess.run(
                 [_CLIPBOARD_BINARY, '-selection', 'clipboard'],
                 input=text.encode('utf-8'),
                 env=self._env(),
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 check=True,
                 timeout=_CLIPBOARD_TIMEOUT_SECONDS,
             )
@@ -224,7 +231,7 @@ class RDPSession(DesktopSession):
             '/bpp:24',
             '+clipboard',
             '/relax-order-checks',
-            '/kbd:0x00000409',
+            '/kbd:layout:0x00000409',
             '+fonts',
             '+aero',
             '+window-drag',

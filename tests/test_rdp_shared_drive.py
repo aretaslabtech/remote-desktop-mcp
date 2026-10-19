@@ -18,7 +18,7 @@ ORIGINAL_RDP_CMD = [
     '/bpp:24',
     '+clipboard',
     '/relax-order-checks',
-    '/kbd:0x00000409',
+    '/kbd:layout:0x00000409',
     '+fonts',
     '+aero',
     '+window-drag',
