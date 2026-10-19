@@ -50,6 +50,25 @@ class TestClipboardBackend:
         kwargs = run.call_args.kwargs
         assert kwargs['input'] == b'some clipboard text'
 
+    def test_write_text_does_not_capture_stdout_or_stderr(self) -> None:
+        """Regression test (found against a real xclip): `xclip -i` forks a
+        background process that stays alive to serve the clipboard and
+        inherits any stdout/stderr pipe we give it, so capture_output=True
+        (or stdout=PIPE/stderr=PIPE) makes subprocess.run() hang until the
+        timeout on every real write, even though the write itself already
+        succeeded. Mocked tests can't catch the hang itself, so this test
+        pins the fix (DEVNULL on both streams) so it can't silently regress."""
+        backend = ClipboardBackend(display=':99')
+
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
+                patch('remote_desktop_mcp.protocol.rdp.subprocess.run') as run:
+            backend.write_text('text')
+
+        kwargs = run.call_args.kwargs
+        assert kwargs.get('stdout') is subprocess.DEVNULL
+        assert kwargs.get('stderr') is subprocess.DEVNULL
+        assert 'capture_output' not in kwargs
+
     def test_read_text_passes_requested_display_to_subprocess(self) -> None:
         backend = ClipboardBackend(display=':42')
         fake_result = MagicMock(stdout=b'', returncode=0)
