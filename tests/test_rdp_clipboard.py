@@ -27,7 +27,7 @@ def _start_session(session: RDPSession) -> None:
 class TestClipboardBackend:
     def test_read_text_returns_output_of_clipboard_tool(self) -> None:
         backend = ClipboardBackend(display=':99')
-        fake_result = MagicMock(stdout=b'hello from clipboard')
+        fake_result = MagicMock(stdout=b'hello from clipboard', returncode=0)
 
         with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
                 patch('remote_desktop_mcp.protocol.rdp.subprocess.run', return_value=fake_result) as run:
@@ -52,7 +52,7 @@ class TestClipboardBackend:
 
     def test_read_text_passes_requested_display_to_subprocess(self) -> None:
         backend = ClipboardBackend(display=':42')
-        fake_result = MagicMock(stdout=b'')
+        fake_result = MagicMock(stdout=b'', returncode=0)
 
         with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
                 patch('remote_desktop_mcp.protocol.rdp.subprocess.run', return_value=fake_result) as run:
@@ -93,6 +93,18 @@ class TestClipboardBackend:
             with pytest.raises(ClipboardError, match="xclip' is unavailable"):
                 backend.read_text()
 
+    def test_read_text_returns_empty_string_when_clipboard_has_no_text(self) -> None:
+        """xclip -o exits non-zero when CLIPBOARD has no owner or holds
+        non-text content — the spec requires reporting that as "", not an
+        error (there is no FileNotFoundError/TimeoutExpired here, just a
+        failed run with a non-zero return code)."""
+        backend = ClipboardBackend(display=':99')
+        fake_result = MagicMock(stdout=b'', stderr=b'Error: target STRING not available', returncode=1)
+
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
+                patch('remote_desktop_mcp.protocol.rdp.subprocess.run', return_value=fake_result):
+            assert backend.read_text() == ''
+
     def test_read_text_raises_clear_error_on_timeout(self) -> None:
         """A hung xclip/X11 call must not block the MCP tool call forever."""
         backend = ClipboardBackend(display=':99')
@@ -114,7 +126,7 @@ class TestClipboardBackend:
 
     def test_read_text_passes_timeout_to_subprocess(self) -> None:
         backend = ClipboardBackend(display=':99')
-        fake_result = MagicMock(stdout=b'')
+        fake_result = MagicMock(stdout=b'', returncode=0)
 
         with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
                 patch('remote_desktop_mcp.protocol.rdp.subprocess.run', return_value=fake_result) as run:
@@ -146,7 +158,7 @@ class TestRDPSessionClipboardIntegration:
             host='example.com', user='alice', password='secret',
             display_num=':77',
         )
-        fake_result = MagicMock(stdout=b'')
+        fake_result = MagicMock(stdout=b'', returncode=0)
 
         with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
                 patch('remote_desktop_mcp.protocol.rdp.subprocess.run', return_value=fake_result) as run:

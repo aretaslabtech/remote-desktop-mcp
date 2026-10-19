@@ -79,3 +79,21 @@ If neither `REMOTE_DESKTOP_RDP_SHARED_DIR` nor `--shared-dir` is set, the RDP ba
 exactly as before — no drive is shared, and `clipboard_read`/`clipboard_write` still work over
 FreeRDP's existing `+clipboard` channel as long as `xclip` is installed on the Linux side (the RDP
 session still connects normally if it isn't; the clipboard tools simply report it as unavailable).
+
+### Manual verification against a real Windows RDP target
+
+The unit tests mock `xfreerdp`/`xclip`/`Xvfb` and do not require a real RDP target. The following
+checks require an actual Windows machine reachable over RDP and have **not** been run against one
+as part of this change — run them manually before relying on this feature against production
+hosts:
+
+1. **Shared drive, Linux → Windows**: set `REMOTE_DESKTOP_RDP_SHARED_DIR` to a local directory
+   containing a test file, connect, then on Windows open `\\tsclient\shared` (File Explorer or
+   `dir \\tsclient\shared`) and confirm the file is visible with identical contents.
+2. **Shared drive, Windows → Linux**: from Windows, copy a file into `\\tsclient\shared`, then
+   confirm it appears immediately in the configured local directory on Linux with identical
+   contents (`diff` the two copies).
+3. **Clipboard, Windows → Linux**: copy text on Windows (`Ctrl+C`), then call the `clipboard_read`
+   MCP tool and confirm it returns that exact text.
+4. **Clipboard, Linux → Windows**: call `clipboard_write("some test string")`, then on Windows
+   press `Ctrl+V` in a text field and confirm it pastes `some test string`.

@@ -63,7 +63,6 @@ class ClipboardBackend:
                 [_CLIPBOARD_BINARY, '-selection', 'clipboard', '-o'],
                 env=self._env(),
                 capture_output=True,
-                check=True,
                 timeout=_CLIPBOARD_TIMEOUT_SECONDS,
             )
         except FileNotFoundError as exc:
@@ -74,11 +73,11 @@ class ClipboardBackend:
             raise ClipboardError(
                 f"Clipboard backend '{_CLIPBOARD_BINARY}' timed out.",
             ) from exc
-        except subprocess.CalledProcessError as exc:
-            raise ClipboardError(
-                f"Clipboard backend '{_CLIPBOARD_BINARY}' failed to read "
-                'the clipboard.',
-            ) from exc
+        if result.returncode != 0:
+            # xclip exits non-zero whenever the CLIPBOARD selection has no
+            # owner or holds non-text content — i.e. "there is no text",
+            # which the spec requires reporting as "" rather than an error.
+            return ''
         return result.stdout.decode('utf-8', errors='replace')
 
     def write_text(self, text: str) -> None:
