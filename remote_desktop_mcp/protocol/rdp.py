@@ -14,6 +14,15 @@ from .base import MouseButton
 logger = structlog.get_logger()
 
 _CLIPBOARD_BINARY = 'xclip'
+_CLIPBOARD_TIMEOUT_SECONDS = 5
+
+# Dot-directories directly under $HOME that typically hold credentials or
+# other highly sensitive material. Sharing a subdirectory of $HOME is the
+# spec's own documented use case (e.g. "$HOME/rdp-share"), so these are
+# blocked by name rather than rejecting all of $HOME's subtree.
+_SENSITIVE_HOME_SUBDIRS = {
+    '.ssh', '.aws', '.gnupg', '.docker', '.kube', '.config', '.netrc',
+}
 
 
 class ClipboardError(RuntimeError):
@@ -55,10 +64,15 @@ class ClipboardBackend:
                 env=self._env(),
                 capture_output=True,
                 check=True,
+                timeout=_CLIPBOARD_TIMEOUT_SECONDS,
             )
         except FileNotFoundError as exc:
             raise ClipboardError(
                 f"Clipboard backend '{_CLIPBOARD_BINARY}' is unavailable.",
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' timed out.",
             ) from exc
         except subprocess.CalledProcessError as exc:
             raise ClipboardError(
@@ -76,10 +90,15 @@ class ClipboardBackend:
                 env=self._env(),
                 capture_output=True,
                 check=True,
+                timeout=_CLIPBOARD_TIMEOUT_SECONDS,
             )
         except FileNotFoundError as exc:
             raise ClipboardError(
                 f"Clipboard backend '{_CLIPBOARD_BINARY}' is unavailable.",
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ClipboardError(
+                f"Clipboard backend '{_CLIPBOARD_BINARY}' timed out.",
             ) from exc
         except subprocess.CalledProcessError as exc:
             raise ClipboardError(
@@ -94,7 +113,11 @@ def _validate_shared_dir(shared_dir: str) -> str:
     Expands ``~``, converts to an absolute path, resolves it, and ensures
     the path exists, is a directory, and is not one of the locations that
     must never be auto-shared over RDP (the filesystem root, the user's
-    home directory, the current working directory, or ``/tmp``).
+    home directory, the current working directory, or ``/tmp``), nor a
+    well-known sensitive dot-directory directly under the home directory
+    (e.g. ``~/.ssh``). Note that ``/tmp`` itself is forbidden, but an
+    ordinary subdirectory of it (e.g. ``/tmp/rdp-share``) is allowed, since
+    that is the spec's own documented integration-test example.
     """
     resolved = Path(shared_dir).expanduser().resolve()
 
@@ -114,6 +137,15 @@ def _validate_shared_dir(shared_dir: str) -> str:
             'RDP shared directory must not be the filesystem root, the '
             f"home directory, the current working directory, or /tmp: {resolved}",
         )
+
+    home = Path.home().resolve()
+    if home in resolved.parents:
+        home_relative_parts = resolved.relative_to(home).parts
+        if home_relative_parts[0] in _SENSITIVE_HOME_SUBDIRS:
+            raise ValueError(
+                'RDP shared directory must not be a sensitive directory '
+                f"under the home directory: {resolved}",
+            )
 
     return str(resolved)
 

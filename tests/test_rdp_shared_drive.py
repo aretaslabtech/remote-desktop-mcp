@@ -134,3 +134,55 @@ def test_forbidden_paths_are_refused(
             host='example.com', user='alice', password='secret',
             shared_dir=candidate,
         )
+
+
+@pytest.mark.parametrize(
+    'sensitive_subdir', ['.ssh', '.aws', '.gnupg', '.docker', '.kube', '.config', '.netrc'],
+)
+def test_sensitive_home_subdirectories_are_refused(
+    sensitive_subdir: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A subdirectory of $HOME is allowed in general (the spec's own
+    example is $HOME/rdp-share), but well-known credential-holding
+    dot-directories directly under $HOME must still be refused."""
+    fake_home = tmp_path / 'home-dir'
+    sensitive_dir = fake_home / sensitive_subdir
+    sensitive_dir.mkdir(parents=True)
+    monkeypatch.setattr(Path, 'home', lambda: fake_home)
+
+    with pytest.raises(ValueError, match='sensitive directory'):
+        RDPSession(
+            host='example.com', user='alice', password='secret',
+            shared_dir=str(sensitive_dir),
+        )
+
+
+def test_ordinary_home_subdirectory_is_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Regression guard: an ordinary (non-sensitive) subdirectory of $HOME,
+    such as the spec's own `$HOME/rdp-share` example, must remain allowed."""
+    fake_home = tmp_path / 'home-dir'
+    share_dir = fake_home / 'rdp-share'
+    share_dir.mkdir(parents=True)
+    monkeypatch.setattr(Path, 'home', lambda: fake_home)
+
+    session = RDPSession(
+        host='example.com', user='alice', password='secret',
+        shared_dir=str(share_dir),
+    )
+    assert session.shared_dir == str(share_dir.resolve())
+
+
+def test_ordinary_tmp_subdirectory_is_allowed(tmp_path: Path) -> None:
+    """Regression guard: a subdirectory of /tmp, such as the spec's own
+    `/tmp/rdp-share` integration-test example (spec section 26), must
+    remain allowed even though /tmp itself is forbidden."""
+    share_dir = tmp_path / 'rdp-share'
+    share_dir.mkdir()
+
+    session = RDPSession(
+        host='example.com', user='alice', password='secret',
+        shared_dir=str(share_dir),
+    )
+    assert session.shared_dir == str(share_dir.resolve())

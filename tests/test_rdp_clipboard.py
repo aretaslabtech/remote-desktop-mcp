@@ -1,6 +1,7 @@
 """Tests for the RDP clipboard backend and RDPSession integration."""
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -94,6 +95,39 @@ class TestClipboardBackend:
                 ):
             with pytest.raises(ClipboardError, match="xclip' is unavailable"):
                 backend.read_text()
+
+    def test_read_text_raises_clear_error_on_timeout(self) -> None:
+        """A hung xclip/X11 call must not block the MCP tool call forever."""
+        backend = ClipboardBackend(display=':99')
+
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
+                patch(
+                    'remote_desktop_mcp.protocol.rdp.subprocess.run',
+                    side_effect=subprocess.TimeoutExpired(cmd=['xclip'], timeout=5),
+                ):
+            with pytest.raises(ClipboardError, match='timed out'):
+                backend.read_text()
+
+    def test_write_text_raises_clear_error_on_timeout(self) -> None:
+        backend = ClipboardBackend(display=':99')
+
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
+                patch(
+                    'remote_desktop_mcp.protocol.rdp.subprocess.run',
+                    side_effect=subprocess.TimeoutExpired(cmd=['xclip'], timeout=5),
+                ):
+            with pytest.raises(ClipboardError, match='timed out'):
+                backend.write_text('text')
+
+    def test_read_text_passes_timeout_to_subprocess(self) -> None:
+        backend = ClipboardBackend(display=':99')
+        fake_result = MagicMock(stdout=b'')
+
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
+                patch('remote_desktop_mcp.protocol.rdp.subprocess.run', return_value=fake_result) as run:
+            backend.read_text()
+
+        assert run.call_args.kwargs['timeout'] == 5
 
 
 class TestRDPSessionClipboardIntegration:
