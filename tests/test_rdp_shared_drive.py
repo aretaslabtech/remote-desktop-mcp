@@ -71,6 +71,25 @@ def test_valid_shared_dir_and_explicit_name_adds_drive_arg(tmp_path: Path) -> No
     assert f"/drive:rea,{resolved}" in rdp_cmd
 
 
+def test_no_domain_means_no_d_arg_and_unchanged_cmd() -> None:
+    session = RDPSession(host='example.com', user='alice', password='secret')
+    _, rdp_cmd = _start_session(session)
+
+    assert not any(str(arg).startswith('/d:') for arg in rdp_cmd)
+    assert rdp_cmd == ['xfreerdp', *ORIGINAL_RDP_CMD]
+
+
+def test_domain_adds_d_arg_right_after_credentials() -> None:
+    session = RDPSession(
+        host='example.com', user='alice', password='secret',
+        domain='EXAMPLE',
+    )
+    _, rdp_cmd = _start_session(session)
+
+    assert '/d:EXAMPLE' in rdp_cmd
+    assert rdp_cmd.index('/d:EXAMPLE') == rdp_cmd.index('/p:secret') + 1
+
+
 def test_shared_dir_pointing_at_a_file_raises(tmp_path: Path) -> None:
     file_path = tmp_path / 'not-a-dir.txt'
     file_path.write_text('hello')

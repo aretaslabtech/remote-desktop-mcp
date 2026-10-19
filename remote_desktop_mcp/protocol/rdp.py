@@ -179,10 +179,12 @@ class RDPSession(DesktopSession):
         resolution: str = '1280x720',
         shared_dir: str | None = None,
         shared_name: str = 'shared',
+        domain: str | None = None,
     ) -> None:
         self.host = host
         self.user = user
         self.password = password
+        self.domain = domain
         self.display_num = display_num
         self.resolution = resolution
         self.shared_dir = (
@@ -226,6 +228,7 @@ class RDPSession(DesktopSession):
             f"/v:{self.host}",
             f"/u:{self.user}",
             f"/p:{self.password}",
+            *([f"/d:{self.domain}"] if self.domain else []),
             f"/size:{self.resolution}",
             '/cert:ignore',
             '/bpp:24',

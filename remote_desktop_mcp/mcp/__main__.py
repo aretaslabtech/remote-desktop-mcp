@@ -96,6 +96,13 @@ def mcp_rdp(
             envvar='REMOTE_DESKTOP_RDP_PASSWORD',
         ),
     ] = cast(Any, ...),
+    domain: Annotated[
+        str | None,
+        typer.Option(
+            help='RDP domain for the user account, if required (/d: on xfreerdp).',
+            envvar='REMOTE_DESKTOP_RDP_DOMAIN',
+        ),
+    ] = None,
     display: Annotated[
         str,
         typer.Option(
@@ -137,7 +144,7 @@ def mcp_rdp(
         user=user, display=display, record=record,
     )
     session = RDPSession(
-        host=host, user=user, password=password,
+        host=host, user=user, password=password, domain=domain,
         display_num=display, resolution=resolution,
         shared_dir=shared_dir, shared_name=shared_name,
     )
