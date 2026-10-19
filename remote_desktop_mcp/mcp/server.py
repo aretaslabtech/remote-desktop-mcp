@@ -2,6 +2,7 @@ import atexit
 import base64
 import signal
 from pathlib import Path
+from typing import cast
 
 import structlog
 from fastmcp import FastMCP
@@ -14,6 +15,7 @@ from ..protocol.base import Key
 from ..protocol.base import MobileSession
 from ..protocol.base import MouseButton
 from ..protocol.rdp import ClipboardError
+from ..protocol.rdp import RDPSession
 from .debug import ActionType
 from .debug import get_debug_logger
 from .recorder import ScreenRecorder
@@ -365,9 +367,10 @@ def clipboard_read() -> str:
         return 'Error: No session active.'
     if not isinstance(_session, DesktopSession) or not _session.supports_clipboard:
         return 'Error: Clipboard is not supported by the active session.'
+    session = cast(RDPSession, _session)
 
     try:
-        text = _session.read_clipboard()
+        text = session.read_clipboard()
     except ClipboardError as exc:
         return f"Error: {exc}"
 
@@ -382,9 +385,10 @@ def clipboard_write(text: str) -> str:
         return 'Error: No session active.'
     if not isinstance(_session, DesktopSession) or not _session.supports_clipboard:
         return 'Error: Clipboard is not supported by the active session.'
+    session = cast(RDPSession, _session)
 
     try:
-        _session.write_clipboard(text)
+        session.write_clipboard(text)
     except ClipboardError as exc:
         return f"Error: {exc}"
 

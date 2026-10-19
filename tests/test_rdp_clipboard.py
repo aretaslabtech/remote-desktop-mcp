@@ -88,11 +88,8 @@ class TestClipboardBackend:
     def test_read_text_raises_clear_error_on_file_not_found(self) -> None:
         backend = ClipboardBackend(display=':99')
 
-        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
-                patch(
-                    'remote_desktop_mcp.protocol.rdp.subprocess.run',
-                    side_effect=FileNotFoundError(),
-                ):
+        run_patch = patch('remote_desktop_mcp.protocol.rdp.subprocess.run', side_effect=FileNotFoundError())
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), run_patch:
             with pytest.raises(ClipboardError, match="xclip' is unavailable"):
                 backend.read_text()
 
@@ -100,22 +97,18 @@ class TestClipboardBackend:
         """A hung xclip/X11 call must not block the MCP tool call forever."""
         backend = ClipboardBackend(display=':99')
 
-        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
-                patch(
-                    'remote_desktop_mcp.protocol.rdp.subprocess.run',
-                    side_effect=subprocess.TimeoutExpired(cmd=['xclip'], timeout=5),
-                ):
+        timeout = subprocess.TimeoutExpired(cmd=['xclip'], timeout=5)
+        run_patch = patch('remote_desktop_mcp.protocol.rdp.subprocess.run', side_effect=timeout)
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), run_patch:
             with pytest.raises(ClipboardError, match='timed out'):
                 backend.read_text()
 
     def test_write_text_raises_clear_error_on_timeout(self) -> None:
         backend = ClipboardBackend(display=':99')
 
-        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), \
-                patch(
-                    'remote_desktop_mcp.protocol.rdp.subprocess.run',
-                    side_effect=subprocess.TimeoutExpired(cmd=['xclip'], timeout=5),
-                ):
+        timeout = subprocess.TimeoutExpired(cmd=['xclip'], timeout=5)
+        run_patch = patch('remote_desktop_mcp.protocol.rdp.subprocess.run', side_effect=timeout)
+        with patch('remote_desktop_mcp.protocol.rdp.shutil.which', return_value='/usr/bin/xclip'), run_patch:
             with pytest.raises(ClipboardError, match='timed out'):
                 backend.write_text('text')
 
